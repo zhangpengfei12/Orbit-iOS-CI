@@ -111,6 +111,17 @@ jobs:
       - name: 生成 Xcode 工程
         if: steps.sig.outputs.ready == 'true'
         run: cd ios && xcodegen generate
+      - name: 诊断：工程是否真的把 Orbit/Info.plist 设为 INFOPLIST_FILE
+        if: steps.sig.outputs.ready == 'true'
+        run: |
+          cd ios
+          echo "=== 工程里的 Info.plist 文件 ==="
+          find . -name "Info.plist" 2>/dev/null | head -10
+          echo "=== 构建设置（Info.plist / 版本号）==="
+          xcodebuild -project Orbit.xcodeproj -scheme Orbit -configuration Release \
+            -destination generic/platform=iOS \
+            -showBuildSettings 2>/dev/null \
+            | grep -iE "^\s*(INFOPLIST_FILE|GENERATE_INFOPLIST_FILE|INFOPLIST_KEY|PRODUCT_BUNDLE_IDENTIFIER|MARKETING_VERSION|CURRENT_PROJECT_VERSION|INFOPLIST_OTHER_PREPROCESSOR)" | head -30
       - name: build 号自增（避免 TestFlight 撞号）
         if: steps.sig.outputs.ready == 'true'
         run: |
