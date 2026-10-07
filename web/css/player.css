@@ -1,0 +1,425 @@
+body{background:#000;overflow:hidden}
+
+html,body{width:100%;height:100%;margin:0}
+/* 容器改绝对定位铺满：不再用 100vw/100vh。iframe 内 vh 的单位归属在部分
+   WebView 上与卡片高度不一致，会把画面顶出可视区（只剩上半截）。 */
+/* 容器必须铺满视口。
+   ⚠️ cyber-base.css 在 player.css **之后**加载，里面有
+      `#container,.tab-content,…{position:relative;z-index:1}`
+   —— 与本规则同权重（都是单个 ID 选择器），后加载者胜，会把这里的
+   position:absolute 冲掉。实测后果（2026-09-18）：
+     ① 容器退化成「内容高度」= <video> 固有高度（390×219 之类）；
+     ② 进入 VR 模式后 #video 被 display:none，容器**高度直接变 0**，
+        绝对定位的 #vrCanvas 与 .vr-toolbar 一起塌成 0 高 → 内嵌卡片里进 VR 全黑；
+     ③ 底部吸附的 VR 模式浮层（bottom:58px）被顶出容器，只剩末尾两项可见。
+   故用 `body>#container`（0,1,1）压过覆盖层的 `#container`（0,1,0），免疫加载顺序。 */
+body>#container{position:absolute;inset:0;display:flex;flex-direction:column;z-index:1}
+
+/* Top bar */
+.topbar{position:absolute;top:0;left:0;right:0;z-index:23;display:flex;align-items:center;justify-content:flex-start;padding:12px 16px;background:linear-gradient(to bottom,rgba(0,0,0,.7),transparent);transition:opacity .3s,background .3s;pointer-events:auto}
+/* v2.7.24：控制条淡出时顶栏容器自身保持可见（只撤掉背景渐变与鼠标穿透），
+   只让「返回 / 标题」淡走，冲刺按钮（.topbar-actions）始终留在画面上。 */
+.topbar.ui-dim{opacity:1;background:none;pointer-events:none}
+.topbar.ui-dim>a{opacity:0}
+.topbar.ui-dim .title{opacity:0}
+.topbar.ui-dim .topbar-actions{pointer-events:auto}
+.topbar a{color:#fff;text-decoration:none;font-size:16px;display:flex;align-items:center;gap:8px;opacity:.9}
+.topbar a:hover{opacity:1}
+.topbar .back-arrow{font-size:24px}
+.topbar .title{font-size:16px;color:#ccc;max-width:50vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:auto}
+/* 顶栏小按钮（一键冲刺）：v2.7.27 起**回到顶栏条内、紧跟「← 返回」右侧**。
+   不浮到画面上 —— v2.7.25 挂的 top:50px 水平居中，正好压住画面中间那格人物的头/胸，
+   实测遮挡主体。顶栏是 flex 流（padding 12px 16px），按钮 static 落在 12~42px，
+   即画面外的 HUD 黑色渐变条内，主体画面一眼到底；标题靠 margin-left:auto 仍保持最右。
+   embed / VR / 脚本编辑页的顶栏是零高度容器，按钮再各自浮到画面顶沿（见下方各模式规则）。 */
+.topbar-actions{position:static;flex:0 0 auto;display:flex;align-items:center;
+    margin-left:12px;z-index:2;pointer-events:auto}
+/* v2.7.26：z-index 23 上提到 .topbar 基础规则里。原来这条 :not() 规则特异性 (0,3,1)，
+   比 body.manualrec .topbar 的 (0,2,1) 高，会把脚本编辑页的 z-index:31 覆盖成 23，
+   冲刺按钮就被 .mr-overlay(30) 的工具条 (.mr-topbar-row-tools) 吃掉点击（实测点不到）。
+   基础规则给 23 后 manualrec 的 31 才真正生效；embed / VR 两条规则各自也是 23，效果不变。 */
+/* v2.7.24：改成琥珀色实心胶囊（深蓝半透 + 淡白边在播放画面上根本看不见） */
+.topbar-btn{height:30px;padding:0 14px;border-radius:15px;font-size:13px;font-weight:700;line-height:1;
+    color:#3b2500;background:linear-gradient(180deg,#ffd166,#f0a020);border:1px solid rgba(0,0,0,.22);
+    box-shadow:0 2px 10px rgba(0,0,0,.5);cursor:pointer;opacity:1;white-space:nowrap;
+    -webkit-tap-highlight-color:transparent;transition:transform .15s,box-shadow .2s,filter .2s}
+.topbar-btn:hover{filter:brightness(1.08)}
+.topbar-btn:active{transform:scale(.94)}
+.topbar-btn.active{background:linear-gradient(180deg,#86efac,#22c55e);border-color:rgba(0,0,0,.22);color:#052e16;box-shadow:0 2px 12px rgba(34,197,94,.55)}
+
+/* 顶部时间胶囊：播放时间从下方按钮行移到播放器上方顶栏下沿。
+   pointer-events:none —— 纯展示，不吃掉画面上的点击（控制条唤出 / 暂停判定）。
+   z-index 与 topbar 同级，跟随 setUiVisible 一起淡入淡出。 */
+.ptime{position:absolute;top:46px;left:16px;z-index:20;display:flex;align-items:center;gap:7px;
+    font-size:15px;font-variant-numeric:tabular-nums;color:#eaf2ff;line-height:1;
+    background:rgba(0,0,0,.55);padding:5px 11px;border-radius:20px;
+    border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(8px);
+    pointer-events:none;transition:opacity .3s}
+.ptime i{font-style:normal;color:#6f8299}
+.ptime #durTime{color:#93a5bd}
+
+/* Sync indicator */
+.sync{position:absolute;top:12px;right:16px;z-index:20;display:flex;align-items:center;gap:7px;font-size:14px;background:rgba(0,0,0,.6);padding:5px 10px;border-radius:20px;backdrop-filter:blur(8px);max-width:calc(100vw - 32px)}
+.sync-dot{width:8px;height:8px;border-radius:50%}
+.sync-dot.ok{background:#22c55e;animation:pulse 2s infinite}
+.sync-dot.wait{background:#94a3b8;animation:none}
+.sync-dot.warn{background:#f59e0b;animation:none}
+.sync-dot.fail{background:#ef4444;animation:none}
+.sync-axes{display:flex;align-items:center;gap:3px;margin-left:3px}
+.axis-chip{min-width:21px;height:18px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;font-size:11px;font-weight:700;color:#6b7280;background:rgba(255,255,255,.1);line-height:1}
+.axis-chip.loaded{color:#dcfce7;background:rgba(34,197,94,.28)}
+.axis-chip.missing{color:#94a3b8;background:rgba(148,163,184,.14)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* OSR diagnostic panel */
+.osr-debug{position:absolute;top:46px;right:16px;z-index:20;max-width:calc(100vw - 32px);font-size:13px;color:#e2e8f0;background:rgba(15,23,42,.85);border:1px solid rgba(74,158,255,.35);border-radius:12px;backdrop-filter:blur(8px);overflow:hidden}
+.osr-debug-toggle{width:100%;padding:6px 12px;background:transparent;border:none;color:#9fd1ff;text-align:left;cursor:pointer;font-size:13px}
+.osr-debug-body{padding:8px 12px 12px;display:none;min-width:220px;max-width:min(360px,calc(100vw - 32px))}
+.osr-debug-row{margin:4px 0;line-height:1.35;word-break:break-all}
+.osr-debug-row b{color:#93c5fd;min-width:4.5em;display:inline-block}
+.osr-debug-test{margin-top:8px;padding:6px 10px;background:#2563eb;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px}
+.osr-debug-test:active{opacity:.85}
+.osr-debug-result{margin-top:6px;font-size:12px;color:#cbd5e1;min-height:1.2em}
+.osr-debug-select{background:rgba(15,23,42,.9);color:#e2e8f0;border:1px solid rgba(74,158,255,.4);border-radius:6px;padding:2px 6px;font-size:12px;vertical-align:middle}
+.osr-debug-row #osrDbgVersionStatus{font-size:11px;color:#94a3b8;margin-left:4px}
+body.embed .osr-debug{top:38px;right:8px;font-size:12px}
+body.embed .osr-debug-body{padding:6px 10px 10px}
+body.embed .osr-debug-test{padding:5px 8px;font-size:11px}
+
+/* Video */
+/* 视频铺满容器并完整显示：
+   ① height:100% 让元素与容器等高；
+   ② min-height:0 抵消 flex 项默认的 min-height:auto —— 否则 <video> 按自身固有
+      高度（4:3 / 竖屏片子远高于 16:9 播放卡）撑破卡片，被 overflow:hidden 裁掉大半；
+   ③ object-fit:contain 保证任何比例都完整可见，不裁剪、不拉伸变形。 */
+#video{width:100%;height:100%;flex:1 1 auto;min-height:0;object-fit:contain;background:#000;display:block}
+
+/* Controls overlay */
+.controls{position:absolute;bottom:0;left:0;right:0;z-index:20;background:linear-gradient(to top,rgba(0,0,0,.85),transparent);padding:16px 16px 12px;transition:opacity .3s}
+
+/* Progress */
+.progress-wrap{width:100%;height:20px;display:flex;align-items:center;cursor:pointer;position:relative;margin-bottom:8px}
+.progress-track{width:100%;height:4px;background:rgba(255,255,255,.15);border-radius:2px;position:relative;transition:height .1s}
+.progress-wrap:hover .progress-track{height:6px}
+.progress-fill{height:100%;background:#4A9EFF;border-radius:2px;width:0%;position:relative}
+.progress-fill::after{content:'';position:absolute;right:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:50%;background:#fff;opacity:0;transition:opacity .15s}
+.progress-wrap:hover .progress-fill::after{opacity:1}
+.progress-tooltip{position:absolute;top:-30px;transform:translateX(-50%);background:rgba(0,0,0,.9);color:#fff;font-size:13px;padding:3px 8px;border-radius:4px;pointer-events:none;display:none;white-space:nowrap}
+.progress-wrap:hover .progress-tooltip{display:block}
+
+/* Button row */
+.btn-row{display:flex;align-items:center;gap:12px}
+.btn{background:none;border:none;color:#fff;cursor:pointer;padding:4px;font-size:24px;opacity:.9;transition:opacity .15s;display:flex;align-items:center;justify-content:center;width:42px;height:42px}
+.btn:hover{opacity:1}
+.btn svg{width:26px;height:26px;fill:currentColor}
+.spacer{flex:1}
+.vol-wrap{display:flex;align-items:center;gap:6px}
+.more-btn{display:none}          /* 默认不占位；JS 实测按钮行放不下时加 body.pl-compact 才显示 */
+/* 紧凑模式：收起 VR 播放模式 / 播放模式两个次要按钮，音量滑块已由 JS 搬进「更多」面板，
+   喇叭按钮保留（compact 下点击 = 打开「更多」）。 */
+body.pl-compact .btn-row .vr-proj-btn,
+body.pl-compact .btn-row .mode-btn{display:none}
+body.pl-compact .btn-row .more-btn{display:flex}
+.vol-slider{-webkit-appearance:none;appearance:none;width:70px;height:3px;background:rgba(255,255,255,.3);border-radius:2px;outline:none;cursor:pointer}
+.vol-slider::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#fff;cursor:pointer}
+
+/* ───「更多」面板：按钮行实测放不下（body.pl-compact）时收纳音量 / 播放模式 / 倍速 / VR 播放模式 ───
+   面板与控制栏同级，放在控制栏正上方；控制栏一起淡出时它自然跟着隐藏。 */
+.more-sheet{position:absolute;left:0;right:0;bottom:calc(100% + 4px);z-index:30;display:none;
+    padding:10px 12px 12px;border-radius:14px;
+    background:rgba(10,16,30,.94);border:1px solid rgba(74,158,255,.3);
+    backdrop-filter:blur(10px);color:#e2e8f0;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.more-sheet.on{display:block}
+.more-vol{display:flex;align-items:center;gap:10px}
+.more-label{font-size:13px;color:#93a5bd;min-width:2.6em;flex:none}
+.more-vol-wrap{flex:1;min-width:0;display:flex;align-items:center}
+.more-sheet .vol-slider{width:auto;flex:1;height:4px;background:rgba(255,255,255,.26)}
+.more-sheet .vol-slider::-webkit-slider-thumb{width:14px;height:14px}
+.more-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.more-item{padding:9px 4px;border-radius:10px;background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.12);color:#dbe6f5;font-size:14px;font-weight:600;
+    cursor:pointer;font-variant-numeric:tabular-nums;font-family:inherit}
+.more-item:active{background:rgba(74,158,255,.32)}
+
+/* ─── 内嵌模式（视频库页顶部的播放器卡以 iframe 引入：#libFrame） ─── */
+/* v2.7.26：内嵌模式**不再整条隐藏顶栏**。以前一条 display:none 把「返回 / 标题 /
+   冲刺按钮」一起干掉，而首页媒体库恰恰是绝大多数用户的播放入口 —— 冲刺按钮在
+   真实场景里从来没出现过（用户反馈「闪一下就没了」就是它只在非内嵌页露过一瞬）。
+   现在压成「零高度透明容器」（与 manualrec 同一手法）：返回与标题照旧隐藏，
+   冲刺按钮 absolute 挂在画面上方正中，常驻可点，也不吃画面点击。 */
+body.embed .topbar{display:flex;height:0;overflow:visible;background:none;z-index:23;pointer-events:none}
+body.embed .topbar>a,
+body.embed .topbar .title{display:none}
+/* 内嵌卡片窄，同步胶囊与 ptime 都在上半部，按钮下沉到 52px 正好落在胶囊下方的空白带 */
+/* 内嵌卡片里顶栏是零高度容器（返回/标题已隐藏），按钮浮到画面顶沿左侧：
+   靠左是为了躲开右上角同步胶囊（L0/L1/L2… 六轴标签，约 200px 宽），rc 会与居中的按钮撞上 */
+body.embed .topbar-actions{position:absolute;top:4px;left:8px;right:auto;margin:0;transform:none}
+body.embed .sync{top:8px;right:8px;font-size:12px;padding:3px 8px;gap:5px}
+body.embed .axis-chip{min-width:18px;height:16px;font-size:10px}
+body.embed .controls{padding:10px 10px 8px;background:linear-gradient(to top,rgba(0,0,0,.78),transparent)}
+body.embed .progress-wrap{height:16px;margin-bottom:4px}
+body.embed .btn-row{gap:8px}
+body.embed .btn{width:36px;height:36px}
+body.embed .btn svg{width:22px;height:22px}
+body.embed .ptime{top:38px;left:8px;font-size:12.5px;padding:3px 9px;gap:5px}
+/* 内嵌（视频库页）模式同样保留全屏与倍速：全屏由 MainActivity 的
+   WebChromeClient.onShowCustomView 接管，不再受卡片尺寸限制。 */
+body.embed .vol-slider{width:56px}
+
+/* ─── 手机盒子 VR 模式（陀螺仪 + WebGL 全景/影院 + 桶形畸变，Cardboard 类） ─── */
+#vrCanvas{display:none}
+
+/* 进入 VR 模式后隐藏常规顶栏/同步条/控制栏与原始 video，只留 WebGL 画布与 VR 工具栏。
+   v2.7.26：顶栏本身不再 display:none —— 同 embed 手法压成零高度透明容器，
+   冲刺按钮作为驱动开关在 VR 沉浸态里同样常驻（z-index 23 压过 #vrCanvas）。 */
+body.vr-mode .sync,
+body.vr-mode .controls,
+body.vr-mode .ptime{display:none}
+body.vr-mode .topbar{display:flex;height:0;overflow:visible;background:none;z-index:23;pointer-events:none}
+body.vr-mode .topbar>a,
+body.vr-mode .topbar .title{display:none}
+/* VR 沉浸模式同样是零高度顶栏：按钮浮到画面顶沿左侧（与内嵌卡片同位置） */
+body.vr-mode .topbar-actions{position:absolute;top:4px;left:8px;right:auto;margin:0;transform:none}
+
+body.vr-mode #container{padding:0}
+
+body.vr-mode #video{display:none}
+body.vr-mode #vrCanvas{
+    display:block;
+    position:absolute;
+    top:0;left:0;right:0;bottom:0;
+    width:100%;height:100%;
+    background:#000;
+    touch-action:none;
+}
+
+/* VR 工具栏：底部居中，轻点屏幕显隐 */
+.vr-toolbar{
+    position:absolute;
+    left:0;right:0;bottom:0;
+    z-index:40;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    gap:18px;
+    padding:18px;
+    background:linear-gradient(to top,rgba(0,0,0,.78),transparent);
+    opacity:0;
+    transition:opacity .25s;
+}
+body.vr-mode .vr-toolbar{display:flex}
+.vr-btn{
+    min-width:68px;height:48px;padding:0 18px;
+    border:1px solid rgba(255,255,255,.28);
+    background:rgba(0,0,0,.55);
+    color:#fff;border-radius:24px;
+    font-size:15px;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+}
+.vr-btn:active{background:rgba(74,158,255,.45)}
+
+/* 居中对齐参考线，帮助把手机放进盒子时对齐瞳孔 */
+.vr-guide{
+    position:absolute;top:50%;left:50%;
+    width:42px;height:42px;
+    transform:translate(-50%,-50%);
+    z-index:30;pointer-events:none;
+    display:none;opacity:.45;
+}
+body.vr-mode .vr-guide{display:block}
+.vr-guide::before,.vr-guide::after{content:'';position:absolute;background:rgba(255,255,255,.65)}
+.vr-guide::before{left:50%;top:0;width:2px;height:100%;transform:translateX(-50%)}
+.vr-guide::after{top:50%;left:0;height:2px;width:100%;transform:translateY(-50%)}
+
+/* 嵌入（视频库页 iframe）模式下默认不提供 VR 按钮（普通视频库用不到）。
+   VR 盒子模式（?vrbox=1）例外：那里 VR 才是主入口，必须放出来并做发光提示。
+   —— 这正是此前「找不到 VR 盒子入口」的直接原因。 */
+body.embed #vrBtn{display:none}
+body.embed.vrbox #vrBtn{display:flex}
+body.vrbox #vrBtn{color:#7dfcff;animation:vrBtnPulse 1.8s ease-in-out infinite}
+@keyframes vrBtnPulse{
+    0%,100%{opacity:.72;filter:drop-shadow(0 0 0 rgba(125,252,255,0))}
+    50%{opacity:1;filter:drop-shadow(0 0 7px rgba(125,252,255,.85))}
+}
+
+/* ─── VR 播放模式（FLAT / 分屏 / 180° / 360°） ─── */
+/* 投影按钮：VR 盒子模式与独立播放页可见；视频库普通内嵌模式不显示 */
+#vrProjBtn{display:none}
+body.vrbox #vrProjBtn,
+body:not(.embed) #vrProjBtn{display:flex}
+/* 标签随模式变化（FLAT / 180° / 360·3D…）。内嵌卡片的控制行很挤，按钮会被
+   flex 压缩，所以给一个下限宽度 + 禁止换行 + 溢出隐藏，超长宁可省略也不换行。 */
+.btn.vr-proj-btn{
+    font-size:13px;font-weight:700;width:58px;letter-spacing:.2px;
+    color:#7dfcff;font-variant-numeric:tabular-nums;
+    flex:0 1 auto;min-width:46px;white-space:nowrap;overflow:hidden;
+}
+body.embed .btn.vr-proj-btn{width:46px;min-width:44px;font-size:11px;padding:0}
+
+/* 模式选择浮层 */
+.vr-proj-sheet{position:absolute;inset:0;z-index:60;display:none}
+.vr-proj-sheet.on{display:block}
+.vr-proj-mask{position:absolute;inset:0;background:rgba(3,6,14,.62);backdrop-filter:blur(2px)}
+.vr-proj-box{
+    position:absolute;left:50%;bottom:58px;transform:translateX(-50%);
+    /* max-height 必须相对**容器**（.vr-proj-sheet 是 inset:0，故 100% = 容器高）
+       而不是 70vh —— 内嵌时 iframe 视口才是容器，vh 在部分 WebView 上与容器不一致，
+       会算出比容器还高的盒子并把顶部顶出屏幕（只看得见末尾两项）。 */
+    width:min(84vw,340px);max-width:calc(100% - 16px);
+    max-height:calc(100% - 68px);overflow:auto;
+    padding:10px;border-radius:14px;
+    border:1px solid rgba(0,229,255,.34);
+    background:linear-gradient(160deg,rgba(12,18,32,.98),rgba(8,12,24,.98));
+    box-shadow:0 12px 40px -10px rgba(0,229,255,.45);
+}
+.vr-proj-head{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 8px}
+.vr-proj-title{font-size:13px;font-weight:700;color:#9fefff;letter-spacing:.04em}
+.vr-proj-x{background:none;border:none;color:#89a4c0;font-size:15px;line-height:1;padding:4px 6px;cursor:pointer}
+.vr-proj-list{display:flex;flex-direction:column;gap:6px}
+.vr-proj-item{
+    display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+    padding:9px 12px;border-radius:10px;cursor:pointer;text-align:left;
+    border:1px solid rgba(125,252,255,.18);
+    background:rgba(255,255,255,.03);
+    -webkit-tap-highlight-color:transparent;
+}
+.vr-proj-item.on{
+    border-color:rgba(0,229,255,.75);
+    background:rgba(0,229,255,.14);
+    box-shadow:0 0 14px -4px rgba(0,229,255,.8);
+}
+.vr-proj-name{font-size:14px;font-weight:700;color:#dff7ff}
+.vr-proj-item.on .vr-proj-name{color:#7dfcff}
+.vr-proj-desc{font-size:11.5px;color:#8fa6c8}
+
+/* 倍速按钮：文字型，与图标按钮同一触控区尺寸 */
+.btn.rate-btn{font-size:15px;font-weight:700;width:52px;letter-spacing:.2px;font-variant-numeric:tabular-nums}
+body.embed .btn.rate-btn{width:44px;font-size:14px}
+
+/* ─── 容器偏矮时（内嵌播放器卡按片源比例，通常只有 ~200-260px 高） ───
+   6 个模式竖排 + 标题一行根本放不下；这里用**视口高度**做判定（内嵌时视口
+   就等于容器高），改两列网格并整体压缩，保证 6 项一眼看全、无需滚动。
+   横屏全屏（如 844×390）同样命中，也更合理。 */
+@media (max-height:520px){
+    .vr-proj-box{bottom:52px;width:calc(100% - 16px);max-height:calc(100% - 60px);padding:8px;border-radius:12px}
+    .vr-proj-head{padding:0 2px 6px}
+    .vr-proj-title{font-size:12px}
+    .vr-proj-list{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+    .vr-proj-item{padding:6px 8px;border-radius:8px}
+    .vr-proj-name{font-size:12.5px}
+    .vr-proj-desc{font-size:10px}
+    .vr-toolbar{gap:10px;padding:12px}
+    .vr-btn{min-width:56px;height:40px;padding:0 12px;font-size:13px;border-radius:20px}
+}
+
+/* 更矮的容器（内嵌播放器卡常见 ~200-260px，此时上面的两列网格仍会略微溢出
+   —— 实测 220px 容器里列表要 200px、可视只有 158px，最后一行被切一半）。
+   再压一档行高与内边距，让 6 个模式一屏看全、不需要滚动。 */
+@media (max-height:320px){
+    .vr-proj-box{bottom:46px;max-height:calc(100% - 52px);padding:6px;border-radius:10px}
+    .vr-proj-head{padding:0 1px 4px}
+    .vr-proj-title{font-size:11px}
+    .vr-proj-x{font-size:13px;padding:2px 4px}
+    .vr-proj-list{gap:4px}
+    .vr-proj-item{padding:3px 7px;border-radius:7px}
+    .vr-proj-name{font-size:11.5px;line-height:1.2}
+    .vr-proj-desc{font-size:9.5px;line-height:1.2}
+    .vr-toolbar{gap:8px;padding:8px}
+    .vr-btn{min-width:52px;height:34px;padding:0 10px;font-size:12px;border-radius:17px}
+}
+
+/* 不兼容视频编码提示层（HEVC/H.265 等） */
+.codec-block{position:absolute;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.82);backdrop-filter:blur(6px)}
+.codec-box{max-width:min(340px,calc(100vw - 48px));padding:22px 20px;border-radius:16px;background:rgba(15,23,42,.92);border:1px solid rgba(74,158,255,.35);text-align:center;color:#e2e8f0}
+.codec-title{font-size:17px;font-weight:700;margin-bottom:10px;color:#f87171}
+.codec-info{font-size:14px;line-height:1.5;color:#cbd5e1;margin-bottom:18px}
+.codec-actions{display:flex;flex-direction:column;gap:10px}
+.codec-cap{margin:-6px 0 16px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.06);text-align:left}
+.codec-cap-row{display:flex;justify-content:space-between;gap:10px;font-size:12px;line-height:1.7;color:#94a3b8}
+.codec-cap-row b{font-weight:400;color:#e2e8f0}
+.codec-cap-row .yes{color:#4ade80}
+.codec-cap-row .no{color:#f87171}
+.codec-cap-hint{margin-top:8px;font-size:12px;line-height:1.6;color:#94a3b8;white-space:pre-line}
+.codec-btn{padding:11px 14px;border-radius:10px;border:none;font-size:15px;cursor:pointer;background:rgba(255,255,255,.1);color:#e2e8f0;-webkit-tap-highlight-color:transparent}
+.codec-btn.primary{background:#2563eb;color:#fff}
+.codec-btn:active{opacity:.85}
+
+/* ─── 原生播放模式（画面由 Activity 底层的 ExoPlayer 出）─────────────────
+   播放页整体透明，露出底层 SurfaceView；#video 保留布局与点击区，只是不绘制
+   （用 opacity 而不是 display/visibility：布局零变化，点击手势也照旧生效）。
+   ⚠️ cyber-base.css 在 player.css **之后**加载，html/body 的背景必须用 !important 才压得住。 */
+html.native-mode{background-color:transparent !important}
+body.native-mode{background:transparent !important}
+body.native-mode::before,
+body.native-mode::after{display:none !important}
+body.native-mode #video{opacity:0}
+
+/* ─── 脚本编辑覆盖层（manualrec=1）──────────────────────────── */
+.mr-overlay{position:absolute;inset:0;z-index:30;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between}
+.mr-overlay>*{pointer-events:auto}
+.mr-topbar{position:absolute;top:0;left:0;right:0;display:flex;flex-direction:column;gap:8px;padding:10px 14px;background:linear-gradient(to bottom,rgba(0,0,0,.65),transparent);z-index:5}
+.mr-back{font-size:15px;color:#fff;background:rgba(255,255,255,.12);border:none;border-radius:18px;padding:7px 13px;display:flex;align-items:center;gap:5px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.mr-back:active{opacity:.8}
+.mr-title{font-size:15px;color:#fff;font-weight:600;position:absolute;left:50%;transform:translateX(-50%);opacity:.9}
+.mr-topbar-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+.mr-topbar-row-tools{justify-content:space-between;flex-wrap:wrap;row-gap:6px}
+.mr-topbar-pills{display:flex;gap:6px;flex-wrap:wrap}
+.mr-topbar-pills .mr-pill{padding:4px 10px;font-size:12px;border-radius:12px;white-space:nowrap}
+.mr-rec-btn{font-size:14px;color:#fff;background:rgba(239,68,68,.88);border:none;border-radius:18px;padding:7px 14px;display:flex;align-items:center;gap:5px;cursor:pointer;-webkit-tap-highlight-color:transparent;box-shadow:0 2px 10px rgba(239,68,68,.35);flex:0 0 auto;white-space:nowrap}
+.mr-rec-btn.recording{background:rgba(255,255,255,.14);color:#fff}
+.mr-rec-btn::before{content:'';width:8px;height:8px;border-radius:50%;background:#fff}
+.mr-rec-btn.recording::before{background:#ff5f5f;animation:mrBlink 1s infinite}
+@keyframes mrBlink{0%,100%{opacity:1}50%{opacity:.35}}
+.mr-slider{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:56px;height:48vh;min-height:220px;max-height:460px;background:rgba(0,0,0,.45);border-radius:30px;border:1px solid rgba(255,255,255,.12);display:flex;flex-direction:column;align-items:center;padding:14px 0;z-index:5;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:none}
+.mr-slider-label{font-size:12px;color:#fff;font-weight:700;margin-bottom:4px;opacity:.85}
+.mr-slider-val{font-size:12px;color:#22d3ee;font-weight:700;margin-bottom:10px}
+.mr-slider-track{flex:1;width:6px;background:rgba(255,255,255,.18);border-radius:3px;position:relative;overflow:hidden;margin:4px 0}
+.mr-slider-fill{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,#22d3ee,#67e8f9);border-radius:3px;pointer-events:none}
+.mr-slider::after{content:'';position:absolute;width:20px;height:20px;border-radius:50%;background:#22d3ee;box-shadow:0 0 8px rgba(34,211,238,.55);left:50%;transform:translateX(-50%);bottom:calc(14px + (var(--mr-thumb,50%) * (100% - 48px) / 100));pointer-events:none}
+.mr-botbar{position:absolute;left:12px;right:88px;bottom:14px;display:flex;align-items:center;gap:10px;z-index:5;background:rgba(0,0,0,.42);border-radius:12px;padding:6px 10px;pointer-events:none}
+.mr-wave{flex:1 1 auto;min-width:0;height:56px;display:block;pointer-events:none}
+.mr-recinfo{flex:0 0 auto;display:flex;align-items:center;gap:8px;color:#fff;font-size:14px;font-variant-numeric:tabular-nums;background:rgba(0,0,0,.45);padding:4px 12px;border-radius:16px}
+.mr-rec-dot{width:8px;height:8px;border-radius:50%;background:#ef4444;animation:mrBlink 1s infinite;display:none}
+.mr-recinfo.recording .mr-rec-dot{display:inline-block}
+.mr-hint{position:absolute;left:50%;transform:translateX(-50%);top:96px;font-size:12px;color:#fff;background:rgba(0,0,0,.55);padding:6px 12px;border-radius:16px;max-width:78%;text-align:center;z-index:5;pointer-events:none}
+.mr-recinfo.recording~.mr-hint{display:none}
+
+/* 脚本编辑弹窗 */
+.mr-modal{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);padding:18px}
+.mr-modal-box{width:min(360px,100%);background:rgba(15,23,42,.95);border:1px solid rgba(74,158,255,.3);border-radius:18px;padding:20px;color:#e2e8f0;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.mr-modal-title{font-size:17px;font-weight:700;margin-bottom:16px;color:#fff}
+.mr-row{margin-bottom:16px}
+.mr-row-label{font-size:13px;color:#94a3b8;margin-bottom:8px}
+.mr-pills{display:flex;flex-wrap:wrap;gap:8px}
+.mr-pill{font-size:13px;padding:7px 13px;border-radius:20px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#e2e8f0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.mr-pill.active{background:#2563eb;border-color:#2563eb;color:#fff}
+.mr-form label{display:block;font-size:13px;color:#94a3b8;margin-bottom:8px}
+.mr-input{width:100%;box-sizing:border-box;padding:11px 13px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#fff;font-size:15px;outline:none}
+.mr-input:focus{border-color:#2563eb}
+.mr-save-hint{font-size:12px;color:#94a3b8;margin-top:10px;line-height:1.5}
+.mr-modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+.mr-btn{padding:10px 18px;border-radius:12px;border:none;font-size:15px;cursor:pointer;background:rgba(255,255,255,.1);color:#e2e8f0;-webkit-tap-highlight-color:transparent}
+.mr-btn.primary{background:#2563eb;color:#fff}
+.mr-btn:active{opacity:.85}
+.mr-toast{position:fixed;top:86px;left:50%;transform:translateX(-50%);z-index:70;background:rgba(15,23,42,.95);border:1px solid rgba(74,158,255,.3);color:#e2e8f0;padding:11px 18px;border-radius:12px;font-size:14px;max-width:min(320px,80vw);text-align:center;display:none}
+.mr-toast.err{color:#fca5a5;border-color:rgba(248,113,113,.45)}
+
+/* 脚本编辑时隐藏播放器自己的 topbar / controls（由覆盖层接管），但保留画面与手势 */
+/* v2.7.24：脚本编辑页（AI生成脚本）为了给画面腾地方整条隐藏了播放器顶栏，
+   冲刺按钮会跟着一起消失 —— 这里把顶栏压成「零高度透明容器」，只把冲刺按钮
+   重新挂到录制工具条第一行的空白段（back 与录制按钮之间），居中标题让位。
+   z-index 必须超过 .mr-overlay(30)，否则点击会被工具条吃掉。 */
+body.manualrec .topbar{display:block;height:0;overflow:visible;z-index:31}
+body.manualrec .topbar>a,
+body.manualrec .topbar .title{display:none}
+/* 脚本编辑页：顶栏零高度，按钮浮到画面顶沿居中（脚本编辑页顶部是录制工具条，
+   靠左/靠右都会压到它的按钮，居中只压最上面一条 30px 窄边） */
+body.manualrec .topbar-actions{position:absolute;top:4px;left:50%;right:auto;margin:0;transform:translateX(-50%);z-index:2}
+body.manualrec .mr-title{display:none}
+body.manualrec .controls{display:none}
+body.manualrec .ptime{display:none}
+body.manualrec .osr-debug{display:none}
+body.manualrec #vrBtn{display:none}
+body.manualrec #vrProjBtn{display:none}
+body.manualrec #playModeBtn{display:none}
+body.manualrec #moreBtn{display:none}

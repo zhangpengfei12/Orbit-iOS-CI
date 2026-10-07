@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Orbit</title>
+<link rel="stylesheet" href="/css/home.css?v=20261001r">
+<link rel="stylesheet" href="/css/buttons.css?v=20261001r">
+</head>
+<body>
+
+<!-- ─── 图标符号表 ─────────────────────────────────────────── -->
+<svg class="hm-sprite" aria-hidden="true" focusable="false">
+    <symbol id="ic-vr" viewBox="0 0 24 24">
+        <text x="10.6" y="16.6" text-anchor="middle" font-size="11.6" font-weight="800"
+              fill="currentColor" font-family="Arial,Helvetica,sans-serif">VR</text>
+    </symbol>
+    <symbol id="ic-code" viewBox="0 0 24 24">
+        <path d="M8.8 7.6 4 12l4.8 4.4" fill="none" stroke="currentColor" stroke-width="2.3"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M15.2 7.6 20 12l-4.8 4.4" fill="none" stroke="currentColor" stroke-width="2.3"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M13.7 5.4 10.3 18.6" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="ic-thumb" viewBox="0 0 24 24">
+        <rect x="4.9" y="11" width="3.6" height="9.4" rx="1.5" fill="currentColor"/>
+        <rect x="9.1" y="13.7" width="9.9" height="6.7" rx="2.6" fill="currentColor"/>
+        <rect x="12.2" y="5.2" width="3.8" height="9.6" rx="1.9" fill="currentColor"/>
+    </symbol>
+    <symbol id="ic-help" viewBox="0 0 24 24">
+        <path d="M8.2 9.5a4.3 4.3 0 1 1 5.3 4.8v1.75" fill="none" stroke="currentColor"
+              stroke-width="2.4" stroke-linecap="round"/>
+        <circle cx="13.5" cy="19" r="1.6" fill="currentColor"/>
+    </symbol>
+    <symbol id="ic-info" viewBox="0 0 24 24">
+        <circle cx="12" cy="6.8" r="1.8" fill="currentColor"/>
+        <rect x="10.25" y="10.3" width="3.5" height="9.1" rx="1.75" fill="currentColor"/>
+    </symbol>
+    <!-- 网络共享：共享盘（双向箭头 = 与 NAS 互传），与「设备状态」的信号条彻底区分开 -->
+    <symbol id="ic-share" viewBox="0 0 24 24">
+        <rect x="3.1" y="4.4" width="17.8" height="15.2" rx="3.2" fill="none" stroke="currentColor" stroke-width="1.9"/>
+        <path d="M9.2 15V9.8M9.2 9.8 6.85 12.15M9.2 9.8l2.35 2.35" fill="none" stroke="currentColor"
+              stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M14.8 9v5.2M14.8 14.2l2.35-2.35M14.8 14.2l-2.35-2.35" fill="none" stroke="currentColor"
+              stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <!-- 设备：OSR 硬件本体（带行程滑块与底部出线），比原来的「插头」更像设备本身 -->
+    <symbol id="ic-device" viewBox="0 0 24 24">
+        <rect x="8.1" y="2.9" width="7.8" height="12.4" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.9"/>
+        <rect x="9.85" y="5.5" width="4.3" height="4.9" rx="1.5" fill="currentColor"/>
+        <path d="M12 15.3v2.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+        <path d="M9.6 18h4.8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+        <circle cx="12" cy="20.6" r="1.5" fill="currentColor"/>
+    </symbol>
+    <!-- 设备状态：信号强度条 + 状态点（原来的 WiFi 扇形与「配网」语义重叠，容易和真·网络图标混淆） -->
+    <symbol id="ic-devstat" viewBox="0 0 24 24">
+        <rect x="3.3" y="14.4" width="3.3" height="6.3" rx="1.65" fill="currentColor"/>
+        <rect x="8.85" y="10.7" width="3.3" height="10" rx="1.65" fill="currentColor"/>
+        <rect x="14.4" y="6.9" width="3.3" height="13.8" rx="1.65" fill="currentColor"/>
+        <circle cx="19.9" cy="4.8" r="1.8" fill="currentColor"/>
+    </symbol>
+    <symbol id="ic-play" viewBox="0 0 24 24">
+        <path d="M8.6 5.4 18.6 12 8.6 18.6z" fill="currentColor"/>
+    </symbol>
+    <symbol id="ic-vrbox" viewBox="0 0 24 24">
+        <path d="M4.1 8.9h15.8a2.3 2.3 0 0 1 2.3 2.3v3.3a2.7 2.7 0 0 1-2.7 2.7h-3a2.7 2.7 0 0 1-2.2-1.2l-.6-.8a1.7 1.7 0 0 0-2.8 0l-.6.8a2.7 2.7 0 0 1-2.2 1.2h-3a2.7 2.7 0 0 1-2.7-2.7v-3.3a2.3 2.3 0 0 1 2.3-2.3z"
+              fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
+        <circle cx="7.4" cy="13.1" r="1.5" fill="currentColor"/>
+        <circle cx="16.6" cy="13.1" r="1.5" fill="currentColor"/>
+    </symbol>
+    <!-- 脚本生成：生成波形（音频 + 画面混合流 → 笔触） -->
+    <symbol id="ic-rec" viewBox="0 0 24 24">
+        <rect x="3.3" y="9.6" width="2.1" height="4.8" rx="1.05" fill="currentColor"/>
+        <rect x="7.1" y="6.6" width="2.1" height="10.8" rx="1.05" fill="currentColor"/>
+        <rect x="10.9" y="3.9" width="2.1" height="16.2" rx="1.05" fill="currentColor"/>
+        <rect x="14.7" y="7.4" width="2.1" height="9.2" rx="1.05" fill="currentColor"/>
+        <rect x="18.5" y="10.1" width="2.1" height="3.8" rx="1.05" fill="currentColor"/>
+    </symbol>
+
+    <!-- 手控触板：触板 + 可拖拽圆点 -->
+    <symbol id="ic-pad" viewBox="0 0 24 24">
+        <rect x="4.2" y="3.1" width="15.6" height="17.8" rx="3.2" fill="none" stroke="currentColor" stroke-width="1.9"/>
+        <circle cx="12" cy="12" r="3.4" fill="currentColor"/>
+    </symbol>
+
+    <!-- 版本信息：圆点 + 逐条记录（读作「更新日志」） -->
+    <symbol id="ic-ver" viewBox="0 0 24 24">
+        <circle cx="6.3" cy="7" r="1.55" fill="currentColor"/>
+        <circle cx="6.3" cy="12" r="1.55" fill="currentColor"/>
+        <circle cx="6.3" cy="17" r="1.55" fill="currentColor"/>
+        <rect x="10.3" y="6.25" width="9.4" height="1.5" rx="0.75" fill="currentColor"/>
+        <rect x="10.3" y="11.25" width="9.4" height="1.5" rx="0.75" fill="currentColor"/>
+        <rect x="10.3" y="16.25" width="6.6" height="1.5" rx="0.75" fill="currentColor"/>
+    </symbol>
+
+</svg>
+
+<div class="hm">
+
+    <!-- ─── 顶栏：品牌 + OSR 状态 + 插头按钮 ──────────────── -->
+    <header class="hm-top">
+        <div class="hm-brand">Orbit</div>
+    </header>
+
+    <!-- ─── 主体 ──────────────────────────────────────────── -->
+    <main class="hm-main">
+
+        <!-- 视频库 hero -->
+        <a class="hm-hero" href="/index.html">
+            <!-- 视频库 hero 底图：图片资源（原先的内联 SVG 胶片拼贴画已由图片替代）
+                 图片放在 /img/hero-sync.png，用 object-fit:cover 铺满卡片；
+                 源图 353×139（比例 2.54），卡片约 2.8:1，靠 object-position 保上部标题不裁 -->
+            <img class="hm-hero-art" src="/img/hero-sync.png" alt="">
+
+            <span class="hm-hero-play" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M8.7 5.6v12.8L19 12z" fill="#fff"/></svg>
+            </span>
+            <span class="hm-hero-text">
+                <span class="hm-hero-title">播放器</span>
+            </span>
+        </a>
+
+        <!-- 功能磁贴：形态与配色按原版实测还原
+             圆角方（VR一体机）
+             圆形（自动/手动）  描边环（其余）
+             历史合并/去重见下，最新顺序以本注释为准。
+             重排（2026-09-19 第十一轮）：按「设备 → 设备状态 → 自动 → 手动 → VR盒子 → VR一体机 →
+               脚本播放 → 脚本生成 → 帮助 → 版本信息 → 网络共享」排列 ——
+               把最常用的「设备/设备状态」提到最前，VR 两个入口相邻，脚本两个入口相邻，
+               网络共享（低频，配置一次即可）沉到最后。
+               （2026-09-26 第十二轮：「手控触板」插到「脚本生成」之后，共 12 块。）
+               同步动作：VR同步改名为 VR一体机（磁贴、侧栏项、面板标题、帮助章节一起改）；
+               设备 / 设备状态 / 网络共享换用新图标（ic-device / ic-devstat / ic-share）；
+               「版本信息」由首页浮层改为独立页面 ?panel=ver（button → a）。
+               （2026-09-29 第十三轮：插入「脚本编辑」，排在「手控触板」之后，共 13 块。）
+             ⚠️ 改条数或顺序要同步 license_check.py 第 2 节的磁贴数量与 data-lic 合计断言。 -->
+        <nav class="hm-grid">
+            <!-- 1 设备：连接 OSR 硬件（链路状态实时显示在副标题里） -->
+            <a class="hm-tile" data-lic="1" href="/index.html?panel=osr">
+                <span class="hm-icon hm-icon--ring" style="--c:#29b6ff">
+                    <svg class="hm-glyph" viewBox="0 0 24 24"><use href="#ic-device"/></svg>
+                </span>
+                <span class="hm-text"><span class="hm-t">设备</span><span class="hm-s"><span class="hm-dot" id="hmDot"></span><span id="hmDevState">离线</span></span></span>
+            </a>
+
+            <!-- 2 设备状态：设备自带的配网 / 校准页（192.168.4.1） -->
+            <button class="hm-tile" data-lic="1" type="button" id="hmDevCfgBtn">
+                <span class="hm-icon hm-icon--ring" style="--c:#4dc9ff">
+                    <svg class="hm-glyph" viewBox="0 0 24 24"><use href="#ic-devstat"/></svg>
+                </span>
+                <span class="hm-text"><span class="hm-t">设备状态</span><span class="hm-s">wifi配网与校准</span></span>
+            </button>
+
+            <!-- 3 自动：自由演奏 -->
+            <a class="hm-tile" data-lic="1" href="/index.html?panel=auto">
+                <span class="hm-icon hm-icon--circle" style="--c:#ff8a3d">
+                    <svg class="hm-glyph" viewBox="0 0 24 24"><use href="#ic-play"/></svg>
+                </span>
+                <span class="hm-text"><span class="hm-t">自动</span><span class="hm-s">自由节奏</span></span>
+            </a>
+
+            <!-- 4 手动：拖动各轴滑块实时控制 -->
+            <a class="hm-tile" data-lic="1" href="/index.html?panel=manual">
+                <span class="hm-icon hm-icon--circle" style="--c:#ff2fd6">
+                    <svg class="hm-glyph" viewBox="0 0 24 24"><use href="#ic-thumb"/></svg>
+                </span>
+                <span class="hm-text"><span class="hm-t">手动测试轴功能</span><span class="hm-s">拖动滑块控各轴</span></span>
+            </a>
+
+            <!-- 5 VR盒子：与「视频库」同一页面，仅播放器开放 VR 播放模式 -->
+            <a class="hm-tile" data-lic="1" href="/index.html?vrbox=1">
+                <span class="hm-icon hm-icon--ring" style="--c:#c46bff">
+                    <svg class="hm-glyph" viewBox="0 0 24 24"><use href="#ic-vrbox"/></svg>
+                </span>
+                <span class="hm-text"><span class="hm-t">VR盒子</span><span class="hm-s">盒子沉浸播放</span></span>
+            </a>
+
+            <!-- 6 VR一体机（原「VR同步」改名）：连接 DeoVR / HereSphere 一体机，时间轴统一 -->
+            <a class="hm-tile" data-lic="1" href="/index.html?panel=dashboard">
+                <span class="hm-icon hm-icon--vr" style="--c:#00e5ff">
+                    <svg class="hm-glyph" viewBox="0 0 24 24"><use href="#ic-vr"/></svg>
+                </span>
+                <span class="hm-text"><span class="hm-t">VR一体机</span><span class="hm-s">一体机沉浸体验</span></span>
+            </a>
+
+            <!-- 7 脚本播放：多轴脚本任选 -->
+            <a class="hm-tile" data-lic="1" href="/index.html?panel=script">
+                <span class="hm-icon hm-icon--ring" style="--c:#ffc400">
+                    <svg class="hm-glyph" viewBox="0 0 24 24"><use href="#ic-code"/></svg>
+                </span>
+                <span class="hm-text"><span class="hm-t">脚本播放</span><span class="hm-s">多轴脚本任选</span></span>
+            </a>
+
+            <!-- 8 脚本生成：选一个视频，按音视频混合流在视频同目录生成同名 .funscript -->
+            <a class="hm-tile" data-lic="1" href="/index.html?panel=record">
+                <span class="hm-icon hm-icon--ring" style="--c:#ff5f7e">
+                    <svg class="hm-glyph" viewBox="0 0 24 24"><use href="#ic-rec"/></svg>
+                </span>
+                <span class="hm-text"><span class="hm-t">AI生成脚本</span><span class="hm-s">AI 生成脚本</span></span>
+            </a>
+
+            <!-- 9 手控触板：拖拽圆点实时驱动设备，可录制操作轨迹保存为 .funscript -->
+            <a class="hm-tile" data-lic="1" href="/index.html?panel=touchpad">
+                <span class="hm-icon hm-icon--ring" style="--c:#00e5ff">
+                    <svg class="hm-glyph" viewBox="0 0 24 24"><use href="#ic-pad"/></svg>
+                </span>
+                <span class="hm-text"><span class="hm-t">手控触板</span><span class="hm-s">拖动控制·录制脚本</span></span>
+            </a>
+
+            <!-- 10 脚本编辑：选视频边播边用手控触板/陀螺仪驱动设备，按视频时间轴记录轨迹生成 funscript（落视频同目录，随播自动加载） -->
+            <a class="hm-tile" data-lic="1" href="/index.html?panel=manualrecord">
+                <span class="hm-icon hm-icon--ring" style="--c:#7afcff">
+                    <svg class="hm-glyph" viewBox="0 0 24 24"><use href="#ic-rec"/></svg>
+                </span>
+                <span class="hm-text"><span class="hm-t">脚本编辑</span><span class="hm-s">绑定视频时间轴</span></span>
+            </a>
+
+            <!-- 11 帮助：独立页面（?panel=help，与版本信息同款） -->
+            <a class="hm-tile" data-lic="1" href="/index.html?panel=help">
+                <span class="hm-icon hm-icon--ring" style="--c:#9b5cff">
+                    <svg class="hm-glyph" viewBox="0 0 24 24"><use href="#ic-help"/></svg>
+                </span>
+                <span class="hm-text"><span class="hm-t">帮助</span><span class="hm-s">使用方法和教程</span></span>
+            </a>
+
+            <!-- 12 版本信息：独立页面 ?panel=ver（记录数据仍来自 /js/changelog.js） -->
+            <a class="hm-tile" data-lic="1" href="/index.html?panel=ver">
+                <span class="hm-icon hm-icon--ring" style="--c:#ffd166">
+                    <svg class="hm-glyph" viewBox="0 0 24 24"><use href="#ic-ver"/></svg>
+                </span>
+                <span class="hm-text"><span class="hm-t">版本信息</span><span class="hm-s"><span id="hmVerText">v2.6.14</span></span></span>
+            </a>
+
+            <!-- 13 网络共享：SMB / NAS 目录 -->
+            <a class="hm-tile" data-lic="1" href="/index.html?panel=smb" style="display:none">
+                <span class="hm-icon hm-icon--ring" style="--c:#2ee6a8">
+                    <svg class="hm-glyph" viewBox="0 0 24 24"><use href="#ic-share"/></svg>
+                </span>
+                <span class="hm-text"><span class="hm-t">网络共享</span><span class="hm-s">SMB 共享目录</span></span>
+            </a>
+        </nav>
+    </main>
+
+    <footer class="hm-foot">Copyright 2026 Orbit · Niuniu GF · <span id="hmFootVer">v2.7.21</span></footer>
+</div>
+
+<!-- ─── 提示条 ────────────────────────────────────────────── -->
+<div class="hm-toast" id="hmToast"></div>
+
+<!-- 帮助已改为独立页面（?panel=help），内容见 index.html 的 #panel-help，与「版本信息」同款 -->
+
+<script src="/js/license.js?v=20261001r"></script>
+<!-- 试用 / 卡密激活：必须早于业务脚本，守卫才能在功能点击之前生效 -->
+<script src="/js/changelog.js?v=20261001r"></script>
+<script src="/js/home.js?v=20261001r"></script>
+</body>
+</html>

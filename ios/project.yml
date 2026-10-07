@@ -1,0 +1,54 @@
+# XcodeGen 工程描述：CI 里 `brew install xcodegen && xcodegen generate` 生成 Orbit.xcodeproj
+# 不手写 project.pbxproj —— 在 Windows 上无法验证，出错代价太高。
+name: Orbit
+
+options:
+  bundleIdPrefix: com.orbit
+  deploymentTarget:
+    iOS: "16.0"
+  groupOrdering:
+    - order: [Orbit, Resources, Frameworks]
+
+settings:
+  # iOS 版本线独立于安卓：安卓走 2.7.x，iOS 从 1.0.x 起步。
+  # 这样 iOS 迭代不会污染安卓的 versionCode / changelog，也不会误触发安卓发版。
+  # build 号由 CI 用 git rev-list --count HEAD 自增（TestFlight 只要求单调递增）。
+  MARKETING_VERSION: 1.0.0
+  SWIFT_VERSION: "5.9"
+  TARGETED_DEVICE_FAMILY: "1,2"
+
+packages:
+  # ⚠ 原先用 GCDWebServer，但它 2022 年已归档且**没有 Package.swift**（不支持 SwiftPM），
+  #   CI 报 "no versions of 'gcdwebserver' match"。改用 Swifter：纯 Swift、无传递依赖、
+  #   Package.swift 无平台限制（iOS 可用）。
+  Swifter:
+    url: https://github.com/httpswift/swifter
+    from: "1.5.0"
+
+targets:
+  Orbit:
+    type: application
+    platform: iOS
+    sources:
+      - path: Orbit
+    resources:
+      # 顶层 web/ 是 Android 与 iOS 共用的唯一真相源，用文件夹引用整体打进 bundle
+      - path: ../web
+        type: folder
+        buildPhase: resources
+      # 隐私清单：不声明 UserDefaults 等「必需理由 API」，构建会被判 Invalid
+      - path: Orbit/PrivacyInfo.xcprivacy
+        buildPhase: resources
+    info:
+      path: Orbit/Info.plist
+      # 所有 Info.plist 必需键（图标名 / 启动屏 / 方向 / 设备能力）直接写在 Orbit/Info.plist。
+      # ⚠ 不要再用 properties 覆盖：实测 XcodeGen 的 properties 合并没进最终 bundle，
+      #    导致 UISupportedInterfaceOrientations 等键缺失，被 Apple 判 "No orientations were specified"。
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.niuniu.orbit
+      INFOPLIST_KEY_UIUserInterfaceStyle: Dark
+      # 显式声明 AppIcon 集合名，确保 asset catalog 被编译、图标真正进包
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    dependencies:
+      - package: Swifter
+        product: Swifter

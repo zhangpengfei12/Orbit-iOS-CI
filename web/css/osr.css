@@ -1,0 +1,123 @@
+/* ===== OSR 面板专有组件 =====
+ * 本文件只补齐 app.css 里没有的组件；表单、卡片、滑块、分段、按钮、状态行
+ * 一律直接复用 app.css 的原版类（.settings-section / .form-group / .form-input /
+ * .axis-ctrl-row / .axis-slider / .axis-ctrl-value / .sub-tabs / .dash-row /
+ * .dash-actions / .scan-action-buttons / .btn-save / .tool-btn / .save-hint）。
+ * 不要在此覆盖任何原版类，否则会破坏原版在窄屏下的响应式规则。
+ */
+
+/* 实时轴状态：6 轴位置条（视觉沿用原版扫描进度条：4px 轨道 + 蓝青渐变填充） */
+.osr-viz{display:flex;flex-direction:column;gap:9px}
+.osr-viz-row{display:flex;align-items:center;gap:12px}
+.osr-viz-name{
+    width:52px;flex-shrink:0;white-space:nowrap;
+    font-size:13px;color:#8d9ca4;font-variant-numeric:tabular-nums;
+}
+.osr-viz-track{
+    position:relative;flex:1;height:4px;border-radius:2px;
+    background:rgba(255,255,255,.08);overflow:hidden;
+}
+.osr-viz-center{
+    position:absolute;top:0;bottom:0;left:50%;width:1px;
+    background:rgba(255,255,255,.18);
+}
+.osr-viz-fill{
+    position:absolute;top:0;bottom:0;left:0;width:50%;border-radius:2px;
+    background:linear-gradient(90deg,#2fb7e8,#4A9EFF);
+    transition:width .18s linear;
+}
+.osr-viz-val{
+    width:52px;flex-shrink:0;text-align:right;
+    font-size:13px;color:#d8e5ee;font-variant-numeric:tabular-nums;
+}
+
+/* 操作结果提示（沿用原版成功/危险配色） */
+.osr-result{
+    margin-top:12px;padding:10px 12px;border-radius:6px;
+    font-size:13px;line-height:1.5;
+    white-space:pre-line;word-break:break-word;
+    background:rgba(28,180,102,.14);border:1px solid rgba(94,229,138,.32);color:#5ee58a;
+}
+.osr-result.err{
+    background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.32);color:#f87171;
+}
+
+/* 手动轴控制的滑块行沿用原版 .axis-ctrl-row，仅标签放宽以容纳「L0 上下」 */
+#osrManualAxes .axis-ctrl-label{min-width:58px;white-space:nowrap}
+
+/* 脚本文件夹：已加载脚本列表（霓虹胶囊） */
+.osr-script-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.script-chip{
+    display:inline-flex;align-items:center;max-width:100%;
+    padding:5px 12px;border-radius:999px;
+    font-size:12px;line-height:1.4;
+    background:rgba(0,229,255,.08);
+    border:1px solid rgba(0,229,255,.34);
+    color:#9fefff;
+    box-shadow:0 0 10px rgba(0,229,255,.18);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+
+/* 脚本播放控制：图标按钮同行排列（开始 / 暂停 / 停止 / 反转 / 设备复位）。
+   放在独立容器里，避开 .scan-action-buttons .tool-btn{min-width:116px} 的宽度约束。
+   2026-09-18 二次改版：原来「实心形状(▶⏸⏹) + 细线箭头(⇄⟳)」混排，粗细与风格不统一，
+   观感粗糙。现统一为一套线性图标（Lucide/Feather 风格）：24px 网格、2px 描边、
+   圆头圆角、几何重心对齐；描边与辉光由 CSS 统一控制，SVG 内不再写 fill。
+
+   ⚠ 选择器必须写成 `.tool-btn.osr-icon-btn`（而不是 `.osr-icon-btn`）：
+   cyber-base.css 在 osr.css 之后加载，其中的 `.tool-btn{height:38px;border-radius:8px;color:#dff7ff}`
+   与单类选择器同权重、但后加载 → 会把这里的尺寸/圆角/颜色全部冲掉
+   （实测容器高度仍是 38px，图标尺寸也偏离设计）。提高权重后可免疫加载顺序。 */
+.osr-script-controls{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.tool-btn.osr-icon-btn{
+    width:48px;height:48px;min-width:48px;padding:0;
+    display:inline-flex;align-items:center;justify-content:center;
+    border-radius:13px;
+    color:#8fe9ff;
+    transition:color .18s ease,border-color .18s ease,box-shadow .18s ease,
+               background .18s ease,transform .12s ease;
+    -webkit-tap-highlight-color:transparent;
+}
+.tool-btn.osr-icon-btn svg{
+    width:23px;height:23px;display:block;
+    fill:none;stroke:currentColor;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round;
+    filter:drop-shadow(0 0 4px rgba(0,229,255,.5));
+    transition:filter .18s ease;
+}
+.tool-btn.osr-icon-btn:hover{
+    color:#eafcff;
+    border-color:rgba(0,229,255,.66);
+    background:linear-gradient(150deg, rgba(0,229,255,.22), rgba(155,92,255,.16));
+    box-shadow:0 0 16px -2px var(--cy-cyan-soft);
+    transform:translateY(-1px);
+}
+.tool-btn.osr-icon-btn:active{transform:translateY(0) scale(.95)}
+.tool-btn.osr-icon-btn:focus-visible{outline:2px solid rgba(0,229,255,.65);outline-offset:2px}
+/* 开始 = 主操作：最亮 */
+.tool-btn.osr-icon-btn[data-role="play"]{color:#7dfcff}
+/* 停止：偏品红，提示「中断」语义 */
+.tool-btn.osr-icon-btn[data-role="stop"]{color:#ffa4d4}
+.tool-btn.osr-icon-btn[data-role="stop"] svg{filter:drop-shadow(0 0 4px rgba(255,47,214,.45))}
+/* 开始 / 暂停合一（2026-09-19）：默认亮出 ▶（开始），加 .is-playing 后翻成 ⏸（暂停）。
+   权重说明：基础规则 `.tool-btn.osr-icon-btn svg`（2 类 + 1 类型）会把所有 svg 设为 display:block，
+   这里用 3~4 个类提权，保证能压过它（osr.css 之后还有 cyber-base.css，故不能降级选择器）。 */
+.tool-btn.osr-icon-btn .ico-pause{display:none}
+.tool-btn.osr-icon-btn.is-playing .ico-play{display:none}
+.tool-btn.osr-icon-btn.is-playing .ico-pause{display:block}
+/* 暂停态用暖黄，和「开始」的青色、停止的品红区分开 */
+.tool-btn.osr-icon-btn[data-role="pause"]{color:#ffd166}
+.tool-btn.osr-icon-btn[data-role="pause"] svg{filter:drop-shadow(0 0 4px rgba(255,209,102,.5))}
+/* 反转开启态（霓虹紫高亮，与青色主色区分开） */
+.tool-btn.osr-icon-btn.is-on{
+    background:rgba(155,92,255,.18);
+    border-color:rgba(155,92,255,.66);
+    color:#d5bcff;
+    box-shadow:0 0 14px rgba(155,92,255,.42),inset 0 0 12px rgba(155,92,255,.14);
+}
+.tool-btn.osr-icon-btn.is-on svg{filter:drop-shadow(0 0 5px rgba(155,92,255,.6))}
+.tool-btn.osr-icon-btn.is-on:hover{
+    background:rgba(155,92,255,.28);
+    border-color:rgba(155,92,255,.82);
+    color:#e6d8ff;
+}

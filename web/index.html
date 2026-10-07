@@ -1,0 +1,1592 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orbit</title>
+<link rel="stylesheet" href="/css/common.css?v=20261001r">
+<link rel="stylesheet" href="/css/app.css?v=20261001r">
+<link rel="stylesheet" href="/css/nav.css?v=20261001r">
+<link rel="stylesheet" href="/css/osr.css?v=20261001r">
+<link rel="stylesheet" href="/css/lib.css?v=20261001r">
+<link rel="stylesheet" href="/css/cyber-base.css?v=20261001r">
+<link rel="stylesheet" href="/css/touchpad.css?v=20261001r">
+<link rel="stylesheet" href="/css/buttons.css?v=20261001r">
+</head>
+<body>
+<div class="app">
+
+<!-- 顶栏：返回（左）+ 应用名 Orbit（居中）。
+     中间的应用名原本被当成「纯装饰」删掉了，结果顶栏右侧一整片空白、
+     子页看着像没头。现在按首页 .hm-brand 的同款霓虹渐变补回并居中。
+     已移除的两个元素：首页图标（与返回重复，首页磁贴已是唯一导航枢纽）、
+     搜索按钮（功能未实现）。 -->
+<div class="header">
+    <div class="nav-left">
+        <button class="nav-icon" type="button" id="btnNavBack" title="返回"><span class="icon-circle icon-circle-sm"><img class="mi" src="/icons/arrow_back_128dp.png" alt="返回"></span></button>
+    </div>
+    <div class="nav-brand">Orbit</div>
+</div>
+
+<div class="tab-content">
+
+    <div class="tab-pane active" id="pane-home">
+        <!-- 深链入口防闪：首页磁贴跳 /index.html?panel=xxx 时，浏览器会先渲染 #pane-home
+             再执行 app.js 切面板，导致「闪一下播放器/库首页」。这里同步去掉 active，
+             让 app.js 深链处理完后再显示正确面板。
+             ⚠ vrbox（VR 盒子）页的目标本就是视频库页（pane-home），无需去 active；
+             去了反而因 initDeepLink 对 vrbox 直接 return 而不再重新激活，导致整页空白。
+             故仅 panel / tab 深链才去 active，vrbox 保留 pane-home。 -->
+        <script>
+        (function(){
+            try {
+                var p = new URLSearchParams(location.search);
+                if (p.get('panel') || p.get('tab')) {
+                    var home = document.getElementById('pane-home');
+                    if (home) home.classList.remove('active');
+                }
+            } catch (e) {}
+        })();
+        </script>
+        <div class="lib-page">
+
+            <!-- VR 盒子模式徽标：首页「VR盒子」磁贴以 ?vrbox=1 进入时显示。
+                 页面与视频库完全一致（同一套列表 / 文件夹 / 轴设置），
+                 只是播放器额外开放「VR 播放模式」（FLAT / 分屏 / 180° / 360°）。 -->
+            <div class="lib-vrmode" id="libVrMode" style="display:none">
+                <span class="lib-vrmode-dot"></span>
+                <span class="lib-vrmode-t">VR 盒子模式</span>
+                <span class="lib-vrmode-s">点视频播放 → 播放器 <b>VR</b> 按钮进入沉浸；投影可选 FLAT / 分屏 / 180° / 360°</span>
+            </div>
+
+            <!-- 顶部播放器：默认是黑色占位卡；选中后换成 /player/?video=..&embed=1 的内嵌 iframe。
+                 embed 模式下播放页会隐去自己的顶栏/返回键，只留画面、进度、音量与 OSR 脚本同步。 -->
+            <div class="lib-player" id="libPlayer">
+                <div class="lib-player-ph" id="libPlayerPh">
+                    <svg class="lib-play-glyph" viewBox="0 0 24 24"><path d="M8.7 5.6v12.8L19 12z"/></svg>
+                </div>
+                <!-- allow 里必须带 gyroscope / accelerometer：iframe 内的 deviceorientation
+                     受 Permissions Policy 管辖，缺了它 VR 模式的陀螺仪会静默取不到数据
+                     （只能退回手指拖动）。 -->
+                <iframe class="lib-player-frame" id="libFrame" style="display:none"
+                        allow="autoplay; fullscreen; encrypted-media; gyroscope; accelerometer; magnetometer"
+                        allowfullscreen title="播放器"></iframe>
+            </div>
+            <!-- 状态条：默认隐藏（不再显示「未选择视频」占位），选中影片后显示片名 -->
+            <div class="lib-now" id="libNow" style="display:none"></div>
+
+            <div class="lib-actions">
+                <button class="lib-btn" type="button" id="libBtnConnect">连接设备</button>
+                <button class="lib-btn lib-btn--primary" type="button" id="libBtnFolder">选择文件夹</button>
+                <button class="lib-btn" type="button" id="libBtnAxis">轴设置</button>
+            </div>
+
+            <!-- 工具行：只留「一键清除」。
+                 「只看视频 / 含文件夹」开关已按需求移除 —— 列表恒为「只显示视频」，
+                 该目录无视频但有子文件夹时自动回退显示子文件夹（见 app.js renderLibList）。 -->
+            <div class="lib-actions lib-actions--tools">
+                <button class="lib-btn lib-btn--danger" type="button" id="libBtnClear">一键清除</button>
+            </div>
+
+            <div class="lib-sec">
+                <div class="lib-sec-title">视频列表：</div>
+                <div class="lib-crumb" id="libCrumb"></div>
+                <div class="lib-list" id="libList"></div>
+                <div class="lib-empty" id="libEmpty" style="display:none">该文件夹下没有视频</div>
+                <div class="lib-loading" id="libLoading" style="display:none">加载中...</div>
+            </div>
+
+            <div class="lib-devstate" id="libDevState"><span class="lib-dot" id="libDot"></span><span id="libDevText">设备状态：未检测</span></div>
+        </div>
+
+        <!-- ── 兼容槽（不要删！） ─────────────────────────────────────────
+             原「媒体库」工具条 + 影片网格 + 分页已从可见界面移除，但 app.js 有 25 处
+             引用 #videoGrid / #homeLoading / #homeEmpty / #homePagination，其中
+             app.js:1978 的 addEventListener 与 loadHome() 的 style.display 赋值
+             都没有 null 保护 —— 删掉这些节点会让整段 app.js 在顶层抛错，全站交互失效。
+             这里保留 DOM 并用 CSS（.legacy-slot：visibility:hidden + height:0）隐藏。 -->
+        <div class="legacy-slot" aria-hidden="true">
+            <div class="page-pad">
+                <div class="library-toolbar">
+                    <div class="toolbar-left">
+                        <div class="section-title">媒体库</div>
+                    </div>
+                    <div id="homePaginationTop" class="pagination-inline" style="display:none"></div>
+                    <div class="control-actions">
+                        <div class="library-picker sort-picker" id="sortMode" title="&#25490;&#24207;">
+                            <button class="library-picker-btn" type="button" data-sort-label aria-haspopup="true" aria-expanded="false">&#39034;&#24207;</button>
+                            <div class="library-picker-menu" data-sort-menu></div>
+                        </div>
+                        <div class="library-picker" id="librarySelect" title="媒体库">
+                            <button class="library-picker-btn" type="button" data-library-label aria-haspopup="true" aria-expanded="false">全部媒体库</button>
+                            <div class="library-picker-menu" data-library-menu></div>
+                        </div>
+                        <button class="nav-icon" id="btnRefreshLibrary" title="刷新"><span class="icon-circle icon-circle-sm"><img class="mi" src="/icons/refresh_128dp.png" alt="刷新"></span></button>
+                    </div>
+                </div>
+                <div id="videoGrid" class="grid"></div>
+                <div id="homePagination" class="pagination" style="display:none"></div>
+                <div id="homeEmpty" class="empty" style="display:none">
+                    <div class="empty-icon"><span class="icon-circle icon-circle-lg"><img class="mi-lg" src="/icons/video_library_128dp.png" alt=""></span></div>
+                    <div class="empty-text">暂无影片</div>
+                    <div class="empty-sub">请在 App 中配置视频目录</div>
+                </div>
+                <div id="homeLoading" class="spinner">加载中...</div>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="tab-pane" id="pane-actors">
+        <div class="page-pad">
+            <div class="library-toolbar">
+                <div>
+                    <div class="section-title">演员</div>
+                    <div class="library-subtitle">按 NFO 演员信息浏览媒体</div>
+                </div>
+                <div class="library-picker" id="actorsLibrarySelect" title="媒体库">
+                    <button class="library-picker-btn" type="button" data-library-label aria-haspopup="true" aria-expanded="false">全部媒体库</button>
+                    <div class="library-picker-menu" data-library-menu></div>
+                </div>
+                <div id="actorsPaginationTop" class="pagination-inline" style="display:none"></div>
+            </div>
+            <div id="actorsGrid" class="actors-grid"></div>
+            <div id="actorsPagination" class="pagination" style="display:none"></div>
+            <div id="actorsEmpty" class="empty" style="display:none">
+                <div class="empty-icon"><span class="icon-circle icon-circle-lg"><img class="mi-lg" src="/icons/video_library_128dp.png" alt=""></span></div>
+                <div class="empty-text">暂无演员信息</div>
+                <div class="empty-sub">深度扫描 NFO 后会在这里显示演员</div>
+            </div>
+            <div id="actorsLoading" class="spinner" style="display:none">加载中...</div>
+        </div>
+    </div>
+
+    <div class="tab-pane" id="pane-favorites">
+        <div class="page-pad">
+            <div class="library-toolbar">
+                <div class="toolbar-left">
+                    <div class="section-title">&#25910;&#34255;</div>
+                </div>
+                <div id="favoritesPaginationTop" class="pagination-inline" style="display:none"></div>
+                <div class="control-actions">
+                    <div class="library-picker sort-picker" id="favoritesSortMode" title="&#25490;&#24207;">
+                        <button class="library-picker-btn" type="button" data-sort-label aria-haspopup="true" aria-expanded="false">&#39034;&#24207;</button>
+                        <div class="library-picker-menu" data-sort-menu></div>
+                    </div>
+                    <div class="library-picker" id="favoritesLibrarySelect" title="&#23186;&#20307;&#24211;">
+                        <button class="library-picker-btn" type="button" data-library-label aria-haspopup="true" aria-expanded="false">&#20840;&#37096;&#23186;&#20307;&#24211;</button>
+                        <div class="library-picker-menu" data-library-menu></div>
+                    </div>
+                    <button class="nav-icon" id="btnRefreshFavorites" title="&#21047;&#26032;"><span class="icon-circle icon-circle-sm"><img class="mi" src="/icons/refresh_128dp.png" alt="&#21047;&#26032;"></span></button>
+                </div>
+            </div>
+            <div id="favoritesGrid" class="grid"></div>
+            <div id="favoritesPagination" class="pagination" style="display:none"></div>
+            <div id="favoritesEmpty" class="empty" style="display:none">
+                <div class="empty-icon"><span class="icon-circle icon-circle-lg"><img class="mi-lg" src="/icons/favorite_128dp.svg" alt=""></span></div>
+                <div class="empty-text">&#26242;&#26080;&#25910;&#34255;</div>
+                <div class="empty-sub">&#24403;&#21069;&#23186;&#20307;&#24211;&#36824;&#27809;&#26377;&#25910;&#34255;&#30340;&#35270;&#39057;</div>
+            </div>
+            <div id="favoritesLoading" class="spinner" style="display:none">&#21152;&#36733;&#20013;...</div>
+        </div>
+    </div>
+
+    <div class="tab-pane" id="pane-folder">
+        <div class="page-pad">
+            <div class="library-toolbar">
+                <div class="section-title">文件夹</div>
+                <div class="sub-tabs">
+                    <div class="sub-tab active" data-sub="local">本地</div>
+                    <div class="sub-tab" data-sub="smb">网络</div>
+                </div>
+            </div>
+        </div>
+        <div class="sub-pane active folder-pane" id="sub-local">
+            <div class="breadcrumb" id="localBreadcrumb"></div>
+            <div class="dir-path" id="localPath"></div>
+            <div class="file-list poster-list" id="localFiles"></div>
+            <div id="localEmpty" class="empty" style="display:none">
+                <div class="empty-icon"><span class="icon-circle icon-circle-lg"><img class="mi-lg" src="/icons/folder.png" alt=""></span></div>
+                <div class="empty-text">无内容</div>
+                <div class="empty-sub" id="localEmptySub"></div>
+            </div>
+            <div id="localLoading" class="spinner" style="display:none">加载中...</div>
+        </div>
+        <div class="sub-pane folder-pane" id="sub-smb">
+            <div class="breadcrumb" id="smbBreadcrumb"></div>
+            <div class="dir-path" id="smbPath"></div>
+            <div class="file-list poster-list" id="smbFiles"></div>
+            <div id="smbEmpty" class="empty" style="display:none">
+                <div class="empty-icon"><span class="icon-circle icon-circle-lg"><img class="mi-lg" src="/icons/folder.png" alt=""></span></div>
+                <div class="empty-text">无内容</div>
+            </div>
+            <div id="smbLoading" class="spinner" style="display:none">加载中...</div>
+        </div>
+    </div>
+
+    <div class="tab-pane" id="pane-category">
+        <div class="page-pad">
+            <div class="library-toolbar">
+                <div>
+                    <div class="section-title">分类</div>
+                    <div class="library-subtitle">按来源和首字母浏览媒体</div>
+                </div>
+                <div class="sub-tabs category-tabs">
+                    <div class="sub-tab active" data-category="all">全部</div>
+                    <div class="sub-tab" data-category="local">本地</div>
+                    <div class="sub-tab" data-category="smb">SMB</div>
+                </div>
+            </div>
+            <div id="categoryGroups"></div>
+            <div id="categoryPagination" class="pagination" style="display:none"></div>
+            <div id="categoryEmpty" class="empty" style="display:none">
+                <div class="empty-icon"><span class="icon-circle icon-circle-lg"><img class="mi-lg" src="/icons/category_128dp.png" alt=""></span></div>
+                <div class="empty-text">暂无分类内容</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane" id="pane-settings">
+        <div class="settings-layout">
+            <nav class="settings-sidebar">
+                <div class="sidebar-group">
+                    <div class="sidebar-group-title">VR 与媒体</div>
+                    <div class="sidebar-item active" data-panel="dashboard">
+                        <span class="icon-circle icon-circle-md"><img class="sidebar-icon" src="/icons/dashboard_128dp.png" alt=""></span>VR 一体机
+                    </div>
+                    <div class="sidebar-item" data-panel="library">
+                        <span class="icon-circle icon-circle-md"><img class="sidebar-icon" src="/icons/video_library_128dp.png" alt=""></span>媒体库
+                    </div>
+                </div>
+                <div class="sidebar-group" style="display:none">
+                    <div class="sidebar-group-title">网络</div>
+                    <div class="sidebar-item" data-panel="smb">
+                        <span class="icon-circle icon-circle-md"><img class="sidebar-icon" src="/icons/smb_share_128dp.png" alt=""></span>网络共享
+                    </div>
+                </div>
+                <div class="sidebar-group">
+                    <div class="sidebar-group-title">设备</div>
+                    <div class="sidebar-item" data-panel="axes">
+                        <span class="icon-circle icon-circle-md"><img class="sidebar-icon" src="/icons/tune_128dp.png" alt=""></span>OSR 轴设置
+                    </div>
+                    <div class="sidebar-item" data-panel="osr">
+                        <span class="icon-circle icon-circle-md"><img class="sidebar-icon" src="/icons/devices_128dp.png" alt=""></span>OSR 设备
+                    </div>
+                    <div class="sidebar-item" data-panel="manual">
+                        <span class="icon-circle icon-circle-md"><img class="sidebar-icon" src="/icons/category_128dp.png" alt=""></span>手动控制
+                    </div>
+                    <div class="sidebar-item" data-panel="auto">
+                        <span class="icon-circle icon-circle-md"><img class="sidebar-icon" src="/icons/category_128dp.png" alt=""></span>自动模式
+                    </div>
+                    <!-- 脚本生成（2026-09-19）：首页「脚本生成」磁贴的目标面板 -->
+                    <div class="sidebar-item" data-panel="record">
+                        <span class="icon-circle icon-circle-md"><img class="sidebar-icon" src="/icons/tune_128dp.png" alt=""></span>AI生成脚本
+                    </div>
+                    <!-- 脚本编辑（2026-09-29）：首页「脚本编辑」磁贴的目标面板，边看视频边手动控设备并按视频时间轴记录 -->
+                    <div class="sidebar-item" data-panel="manualrecord">
+                        <span class="icon-circle icon-circle-md"><img class="sidebar-icon" src="/icons/rec_128dp.png" alt=""></span>脚本编辑
+                    </div>
+                </div>
+                <div class="sidebar-group">
+                    <div class="sidebar-group-title">高级</div>
+                    <div class="sidebar-item" data-panel="analyze">
+                        <span class="icon-circle icon-circle-md"><img class="sidebar-icon" src="/icons/tune_128dp.png" alt=""></span>自动分析
+                    </div>
+                    <!-- 帮助（2026-09-19）：由首页弹窗改为独立页面，与版本信息同款 -->
+                    <div class="sidebar-item" data-panel="help">
+                        <span class="icon-circle icon-circle-md"><img class="sidebar-icon" src="/icons/info_128dp.png" alt=""></span>帮助
+                    </div>
+                    <!-- 版本信息（2026-09-19 第十一轮）：由首页页内浮层改为独立页面，
+                         记录数据仍来自 /js/changelog.js（唯一真值源），本页只负责渲染。 -->
+                    <div class="sidebar-item" data-panel="ver">
+                        <span class="icon-circle icon-circle-md"><img class="sidebar-icon" src="/icons/info_128dp.png" alt=""></span>版本信息
+                    </div>
+                    <!-- 激活（2026-09-28）：走深链 ?panel=license 由 license.js 弹面板，
+                         不占用 settings-panel（三个页面都要能用，弹层比分区更好复用）。 -->
+                    <a class="sidebar-item" href="/index.html?panel=license"
+                       style="text-decoration:none">
+                        <span class="icon-circle icon-circle-md"><img class="sidebar-icon" src="/icons/info_128dp.png" alt=""></span>激活
+                    </a>
+                </div>
+            </nav>
+
+            <div class="settings-main">
+                <!-- Dashboard：VR 一体机（DeoVR / HereSphere 连接 + 服务状态）。
+                     2026-09-16 第四轮：首页「媒体服务器」磁贴已删，本页唯一入口是首页磁贴。
+                     2026-09-19 第十一轮：随首页磁贴改名，本页统一叫「VR 一体机」——
+                     与「VR盒子」区分开：盒子是把手机放进眼镜盒，一体机是独立头显。 -->
+                <div class="settings-panel active" id="panel-dashboard">
+                    <div class="panel-header">
+                        <h2 class="panel-title">VR 一体机</h2>
+                    </div>
+                    <!-- 顶部运行信息块（版本 / 视频数量 / 播放状态 / 时间源 / 浏览器识别 / UA）
+                         已按需求移除，本页只保留下方连接信息。
+                         app.js loadDashboard() 对这些节点全部带 null 保护，删节点安全。 -->
+
+                    <!-- DeoVR 连接 -->
+                    <div class="settings-section" style="margin-top:16px" id="deovrSection">
+                        <h3>DeoVR 连接</h3>
+                        <div id="deovrPanel">
+                            <div class="dash-row"><span class="dash-label">状态</span><span class="dash-value" id="dashDeovrStatus">--</span></div>
+                            <div class="form-group deovr-ip-row" style="margin-top:12px">
+                                <label class="form-label">IP 地址</label>
+                                <div class="input-with-btn">
+                                    <input class="form-input" id="deovrHost" placeholder="127.0.0.1" value="127.0.0.1">
+                                    <button class="tool-btn icon-tool-btn" id="btnDeovrDiscover" title="搜索设备" aria-label="搜索设备"><img class="mi" src="/icons/search_128dp.png" alt=""></button>
+                                </div>
+                            </div>
+                            <div class="dash-actions" style="margin-top:12px">
+                                <div class="scan-action-buttons">
+                                <button class="tool-btn" id="btnDeovrConnect">连接 DeoVR</button>
+                                <button class="tool-btn" id="btnHereSphereConnect">连接 HereSphere</button>
+                                <button class="tool-btn ob-btn--danger" id="btnDeovrDisconnect">断开</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Library -->
+                <div class="settings-panel" id="panel-library">
+                    <div class="panel-header">
+                        <h2 class="panel-title">媒体库</h2>
+                    </div>
+
+                    <!-- 本机视频目录：安卓端通过系统文件夹选择器（SAF）授权 -->
+                    <div class="settings-section">
+                        <h3>本机视频目录</h3>
+                        <p class="panel-desc">选择手机中存放视频的文件夹。点「选择文件夹」会唤起系统文件夹选择器，授权后本应用即可读取其中的视频与同名 <code>.funscript</code> 脚本。</p>
+                        <div class="form-group">
+                            <label class="form-label">当前目录</label>
+                            <div class="form-input form-input-readonly" id="localRootDisplay" data-root-path="">读取中...</div>
+                        </div>
+                        <div class="scan-action-buttons">
+                            <button class="tool-btn media-scan-all" id="btnPickLocalFolder" type="button">选择文件夹</button>
+                            <span class="save-hint" id="localRootHint"></span>
+                        </div>
+                        <div class="form-group" style="margin-top:14px">
+                            <label class="form-label">或手动输入绝对路径</label>
+                            <div class="input-with-btn">
+                                <input class="form-input" id="localRootManual" placeholder="例如 /storage/emulated/0/Movies">
+                                <button class="tool-btn" id="btnSaveLocalRoot" type="button">保存</button>
+                            </div>
+                        </div>
+                        <div class="action-hints">
+                            <div class="action-hint">
+                                <div class="action-hint-title">为什么「文件夹」里看不到文件？</div>
+                                <div class="action-hint-text">安卓 11 及以上默认禁止应用直接读取手机存储，未授权的目录会显示为空。请先点上面的「选择文件夹」授权视频目录（推荐，无需任何额外权限），再回到媒体库执行一次深度扫描。手动输入的路径需要应用已获得视频读取权限，成功率低于文件夹选择器。</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section" style="margin-top:16px">
+                        <div class="media-library-actions">
+                            <button class="tool-btn media-scan-all" id="btnLibScanAll">扫描所有媒体库</button>
+                            <button class="tool-btn ob-btn--danger" id="btnScanStop" style="display:none">停止扫描</button>
+                            <span id="scanStatusText" style="font-size:13px;color:#6b7c85;display:none">就绪</span>
+                        </div>
+                        <div id="scanProgressBar" style="display:none;margin-top:12px">
+                            <div style="height:4px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden">
+                                <div id="scanProgressFill" style="height:100%;background:linear-gradient(90deg,#2fb7e8,#4A9EFF);border-radius:2px;width:0%;transition:width .3s"></div>
+                            </div>
+                            <div style="margin-top:8px;font-size:12px;color:#8d9ca4;display:flex;gap:20px">
+                                <span id="scanProgressPath">--</span>
+                            </div>
+                            <div style="margin-top:4px;font-size:12px;color:#6b7c85">
+                                <span id="scanProgressStats">找到: 0 | NFO: 0</span>
+                            </div>
+                        </div>
+                        <div class="media-library-grid" id="mediaLibraryList"></div>
+                        <div class="action-hints" id="scanActionHints">
+                            <div class="action-hint">
+                                <div class="action-hint-title">快速扫描</div>
+                                <div class="action-hint-text">只重点检查新增目录和普通视频文件，已知的 NFO 影片目录会尽量跳过，适合日常补扫。</div>
+                            </div>
+                            <div class="action-hint">
+                                <div class="action-hint-title">深度扫描</div>
+                                <div class="action-hint-text">重新读取 NFO、演员、分类和封面等元数据，适合首次建库、刷新元数据或排查信息不一致。</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SMB -->
+                <div class="settings-panel" id="panel-smb">
+                    <div class="panel-header">
+                        <h2 class="panel-title">网络共享</h2>
+                    </div>
+                    <div class="settings-section">
+                        <p class="panel-desc">配置 SMB/CIFS 网络共享以访问远程视频文件。</p>
+                        <div class="form-group">
+                            <label class="form-label">媒体库名称</label>
+                            <input class="form-input" id="smbLibraryName" placeholder="例如：电影、电视剧、收藏">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">主机地址</label>
+                            <input class="form-input" id="smbHost" placeholder="192.168.1.100">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">
+                                <input type="checkbox" id="smbAnonymous"> 匿名访问（无需账号密码）
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">用户名</label>
+                            <input class="form-input" id="smbUser" placeholder="可选">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">密码</label>
+                            <input class="form-input" id="smbPass" type="password" placeholder="可选">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">访问目录</label>
+                            <div class="input-with-btn">
+                                <input class="form-input" id="smbShare" placeholder="点击浏览选择目录" readonly>
+                                <button class="tool-btn" id="btnBrowseSmb">浏览</button>
+                            </div>
+                        </div>
+                        <button class="btn-save" id="btnSaveSmb">保存</button>
+                        <button class="tool-btn" id="btnAddSmbLibrary">添加为媒体库</button>
+                        <span class="save-hint" id="smbHint">已保存</span>
+                    </div>
+                </div>
+
+                <!-- SMB Directory Picker Modal -->
+                <div class="modal-overlay" id="smbBrowseModal" style="display:none">
+                    <div class="modal-dialog">
+                        <div class="modal-header">
+                            <h3 class="modal-title">选择目录</h3>
+                            <button class="modal-close" id="btnCloseBrowse">&times;</button>
+                        </div>
+                        <div class="modal-breadcrumb" id="smbModalBreadcrumb"></div>
+                        <div class="modal-body" id="smbModalList">
+                            <div class="spinner">连接中...</div>
+                        </div>
+                        <div class="modal-footer">
+                            <span class="modal-path-display" id="smbModalPath">/ (根目录)</span>
+                            <button class="btn-save" id="btnSelectDir">选择当前目录</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Axes -->
+                <div class="settings-panel" id="panel-axes">
+                    <div class="panel-header">
+                        <h2 class="panel-title">OSR 轴设置</h2>
+                    </div>
+                    <div class="settings-section">
+                        <p class="panel-desc">配置各运动轴的反转、范围与幅度参数。点下方按钮打开编辑器 —— 与视频库页的「轴设置」共用同一份数据，改完直接作用于设备输出。</p>
+                        <div style="margin-top:4px">
+                            <button class="btn-save" id="btnOpenAxisModal" type="button">打开轴参数设置</button>
+                        </div>
+                        <!-- 「旋转补偿 / 俯卧补偿」两个开关已移入轴参数设置弹窗（#axisModal）。
+                             原先放在本面板里，用户反馈在视频库页的「轴设置」里找不到，
+                             而已有的入口按钮打开的就是同一个弹窗 —— 放进弹窗一处即全覆盖。 -->
+                        <p class="panel-desc" style="margin-top:10px">旋转补偿、俯卧补偿、各轴方向反转与行程，都在上面的「轴参数设置」弹窗里配置（与视频库页的「轴设置」是同一个）。</p>
+                        <!-- 兼容槽（不要删）：app.js 的 loadAxesSettings()/renderAxesUI() 会写
+                             #axisContainer，initSettings() 会绑 #btnSaveAxes，saveAxes() 会读
+                             #axesHint —— 节点缺失会在顶层抛错。原内联编辑器已由上面的弹窗取代，
+                             这里保留节点并用 CSS 隐藏。 -->
+                        <div class="legacy-slot" aria-hidden="true">
+                            <div id="axisContainer"></div>
+                            <div style="margin-top:12px">
+                                <button class="btn-save" id="btnSaveAxes" type="button">保存</button>
+                                <span class="save-hint" id="axesHint">已保存</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- OSR Device -->
+                <div class="settings-panel" id="panel-osr">
+                    <div class="panel-header">
+                        <h2 class="panel-title">OSR 设备</h2>
+                    </div>
+                    <div class="settings-section">
+                        <p class="panel-desc">连接 OSR 运动设备（USB 串口 / 蓝牙串口 / 网络），连接成功后即可直接驱动设备。</p>
+                        <div class="form-group">
+                            <label class="form-label">连接方式</label>
+                            <div class="conn-methods" id="connMethods">
+                                <button type="button" class="conn-method" data-method="bt">
+                                    <span class="cm-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10-5 5V2l5 5L7 17"/></svg></span>
+                                    <span class="cm-name">蓝牙</span>
+                                    <span class="cm-desc">扫描并连接</span>
+                                </button>
+                                <button type="button" class="conn-method" data-method="wifi">
+                                    <span class="cm-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.2 7.9a14.4 14.4 0 0 1 19.6 0"/><path d="M5.4 11.7a9.7 9.7 0 0 1 13.2 0"/><path d="M8.7 15.4a5 5 0 0 1 6.6 0"/><circle cx="12" cy="18.7" r="1.25" fill="currentColor" stroke="none"/></svg></span>
+                                    <span class="cm-name">WiFi</span>
+                                    <span class="cm-desc">IP + 端口</span>
+                                </button>
+                                <button type="button" class="conn-method" data-method="usb">
+                                    <span class="cm-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.2v14.3"/><path d="M9.3 6.7 12 4l2.7 2.7"/><path d="M12 13.1 7.6 10.1V8.2"/><rect x="6.3" y="5.6" width="2.6" height="2.6" rx=".6" fill="currentColor" stroke="none"/><path d="M12 16.6l4.4-3v-2.3"/><path d="M16.4 9.2l1.55 2.1h-3.1z" fill="currentColor" stroke="none"/><circle cx="12" cy="19.7" r="1.5" fill="currentColor" stroke="none"/></svg></span>
+                                    <span class="cm-name">USB</span>
+                                    <span class="cm-desc">直连串口设备</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">指令协议</label>
+                            <select class="form-input" id="osrProtocol">
+                                <option value="AUTO">自动</option>
+                                <option value="TCODE">TCode</option>
+                                <option value="CUSTOM">自定义 0-100</option>
+                            </select>
+                        </div>
+                        <!-- 蓝牙：点「蓝牙」卡片进入全屏设备页扫描并连接；此处仅展示已选设备 -->
+                        <div class="conn-sub" id="connBt" style="display:none">
+                            <div class="bt-picked" id="btPicked">
+                                <div class="bt-picked-empty" id="btPickedEmpty">尚未选择蓝牙设备</div>
+                                <div class="bt-picked-dev" id="btPickedDev" style="display:none">
+                                    <span class="bt-picked-name" id="btPickedName">—</span>
+                                    <span class="bt-picked-meta" id="btPickedMeta"></span>
+                                </div>
+                            </div>
+                            <div class="scan-action-buttons" style="margin-top:10px">
+                                <button type="button" class="tool-btn" id="btReselect">选择蓝牙设备</button>
+                                <button type="button" class="tool-btn" id="btDisconnect" style="display:none">断开</button>
+                            </div>
+                            <div class="conn-note">点「选择蓝牙设备」，在设备列表中扫描并点选要连接的设备。</div>
+                        </div>
+
+                        <!-- WiFi：输入 IP 与端口 -->
+                        <div class="conn-sub" id="connWifi" style="display:none">
+                            <div class="form-group">
+                                <label class="form-label">IP 地址</label>
+                                <input class="form-input" id="osrIp" placeholder="192.168.1.88">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">端口</label>
+                                <input class="form-input" id="osrPort" inputmode="numeric" placeholder="8000">
+                            </div>
+                            <div class="conn-note">连上设备的 WiFi 热点后，点下方按钮打开 <code>192.168.4.1</code> 进入设备配置页（舵机零位 / 设备状态 / WiFi 配置 / 固件更新）。</div>
+                            <div class="scan-action-buttons" style="margin-top:10px">
+                                <button type="button" class="tool-btn" id="osrOpenConfig">打开设备配置</button>
+                            </div>
+                        </div>
+
+                        <!-- USB：检测并直连串口设备 -->
+                        <div class="conn-sub" id="connUsb" style="display:none">
+                            <div class="scan-action-buttons" style="margin-bottom:10px">
+                                <button type="button" class="tool-btn" id="usbScan">检测 USB 设备</button>
+                            </div>
+                            <div class="device-list" id="usbDeviceList"></div>
+                            <div class="conn-note" id="usbNote">选中设备后自动保存；无需手填 VID:PID。</div>
+                            <input type="hidden" id="osrSerialDevice">
+                            <div class="form-group" style="margin-top:8px">
+                                <label class="form-label">波特率</label>
+                                <input class="form-input" id="osrBaud" inputmode="numeric" placeholder="115200">
+                            </div>
+                        </div>
+                        <!-- 后台运行（2026-09-19 第十一轮）
+                             切后台/锁屏后设备继续跑靠三层：① 原生播放时钟自驱 ② 前台服务 + 唤醒锁
+                             ③ 页面拿到原生前后台信号。其中第 ② 层还需要用户在系统里放行一次
+                             （国产 ROM 的「后台耗电管理 / 自启动管理」比前台服务更强），
+                             所以这里把状态摊开给用户看，而不是让他凭感觉判断「到底有没有生效」。 -->
+                        <div class="bg-card" id="bgCard">
+                            <div class="bg-card-head">
+                                <span class="bg-card-title">后台运行</span>
+                                <span class="bg-card-state" id="bgState">检查中…</span>
+                            </div>
+                            <p class="bg-card-desc" id="bgDesc">切到后台或锁屏后，视频播放与设备同步应当继续。</p>
+                            <div class="scan-action-buttons">
+                                <button type="button" class="tool-btn" id="bgAllowBtn" style="display:none">允许后台运行</button>
+                            </div>
+                            <div class="bg-rows">
+                                <div class="dash-row"><span class="dash-label">电池优化</span><span class="dash-value" id="bgBattery">--</span></div>
+                                <div class="dash-row"><span class="dash-label">前台服务</span><span class="dash-value" id="bgService">--</span></div>
+                                <div class="dash-row"><span class="dash-label">唤醒锁</span><span class="dash-value" id="bgLocks">--</span></div>
+                                <!-- 上一段后台时段的实测数据：分辨「保活顶住了」与「进程被冻住」。
+                                     驱动时长≈驻留时长 → 保活生效；只驱动开头几秒 → 系统把进程冻了。 -->
+                                <div class="dash-row"><span class="dash-label">上次后台驻留</span><span class="dash-value" id="bgStay">--</span></div>
+                                <div class="dash-row"><span class="dash-label">后台驱动时长</span><span class="dash-value" id="bgDrive">--</span></div>
+                                <div class="dash-row"><span class="dash-label">最近发送</span><span class="dash-value" id="bgLastSent">--</span></div>
+                            </div>
+                        </div>
+
+                        <div class="dash-actions" style="margin-top:12px">
+                            <div class="scan-action-buttons">
+                                <button class="btn-save" id="osrSaveSettings">保存</button>
+                                <button class="tool-btn" id="osrConnTest">连接测试</button>
+                                <span class="save-hint" id="osrHint">已保存</span>
+                            </div>
+                        </div>
+                        <div class="osr-result" id="osrResult" style="display:none"></div>
+                    </div>
+                </div>
+
+                <!-- 脚本播放（原「OSR 设备」面板里的脚本/轴状态部分拆出来）
+                     2026-09-16 第三轮：首页「脚本播放」磁贴指向本分区，
+                     设备连接信息留在「OSR 设备」分区（首页右上插头图标 / 设置页进入）。 -->
+                <div class="settings-panel" id="panel-script">
+                    <div class="panel-header">
+                        <h2 class="panel-title">脚本播放</h2>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>实时轴状态</h3>
+                        <div class="osr-viz" id="osrViz"></div>
+                    </div>
+
+                    <div class="settings-section" style="margin-top:16px">
+                        <div class="dashboard-info">
+                            <div class="dash-row"><span class="dash-label">运行状态</span><span class="dash-value" id="osrMotionState">空闲</span></div>
+                            <div class="dash-row"><span class="dash-label">当前模式</span><span class="dash-value" id="osrPatternName">--</span></div>
+                            <div class="dash-row"><span class="dash-label">已加载脚本</span><span class="dash-value" id="osrHasScript">否</span></div>
+                            <div class="dash-row"><span class="dash-label">脚本时长</span><span class="dash-value" id="osrScriptDuration">--</span></div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section" style="margin-top:16px">
+                        <h3>脚本文件夹</h3>
+                        <p class="panel-desc">选择一个包含 .funscript 的文件夹，应用会一次性加载并合并该目录下所有脚本（各轴同时运行）。</p>
+                        <div class="dash-actions">
+                            <div class="scan-action-buttons">
+                                <button class="tool-btn" id="osrPickScriptFolder">选择脚本文件夹</button>
+                            </div>
+                            <span class="save-hint" id="osrScriptHint">未加载</span>
+                        </div>
+                        <!-- 播放控制：图标按钮同行排列（开始 / 暂停 / 停止 / 反转 / 设备复位）。
+                             2026-09-18：文字按钮改内联 SVG 图标；新增「反转」「设备复位」。
+                             同步改为全局默认开启，不再有「影片同步」开关。 -->
+                        <!-- 播放控制：图标按钮同行排列（开始 / 暂停 / 停止 / 反转 / 设备复位）。
+                             2026-09-18：文字按钮改图标；新增「反转」「设备复位」；同步改为全局默认开启。
+                             2026-09-18 二次改版：五个按钮统一为线性图标集 ——
+                             24px 网格、2px 描边、圆头圆角、几何重心对齐（描边参数由 osr.css 统一给）。 -->
+                        <div class="osr-script-controls" id="osrScriptControls">
+                            <!-- 开始 / 暂停合一（2026-09-19 按需求）：未开始时显示「开始」▶，
+                                 运行中切换为「暂停」⏸ 样式。两个图标都留在按钮里，
+                                 由 .is-playing 控制显隐，避免 JS 改 innerHTML 造成状态闪烁。 -->
+                            <button class="tool-btn osr-icon-btn" id="osrScriptToggle" data-role="play" title="开始" aria-label="开始">
+                                <svg class="ico-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.4 5.5 18.9 12 8.4 18.5Z"/></svg>
+                                <svg class="ico-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.4 5.6v12.8M14.6 5.6v12.8"/></svg>
+                            </button>
+                            <button class="tool-btn osr-icon-btn" id="osrScriptStop" data-role="stop" title="停止" aria-label="停止">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.9" y="6.9" width="10.2" height="10.2" rx="2.6"/></svg>
+                            </button>
+                            <button class="tool-btn osr-icon-btn" id="osrScriptReverse" data-role="reverse" title="反转方向" aria-label="反转方向" aria-pressed="false">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.2 7.6h12.6M13.9 4.8l2.9 2.8-2.9 2.8M19.8 16.4H7.2M10.1 13.6l-2.9 2.8 2.9 2.8"/></svg>
+                            </button>
+                            <button class="tool-btn osr-icon-btn" id="osrDeviceReset" data-role="reset" title="设备复位（各轴回中）" aria-label="设备复位">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 12a8.6 8.6 0 1 0 2.6-6.1L3.4 8.4"/><path d="M3.4 3.6v4.8h4.8"/></svg>
+                            </button>
+                        </div>
+                        <div class="osr-script-list" id="osrScriptList"></div>
+                    </div>
+
+                    <div class="osr-result" style="display:none"></div>
+                </div>
+
+                <!-- 手动控制 / 自动模式：2026-09-18 由原「手动 / 自动」拆成两个独立功能，
+                     首页磁贴与设置页侧栏各自独立入口（?panel=manual / ?panel=auto）。 -->
+                <div class="settings-panel" id="panel-manual">
+                    <div class="panel-header">
+                        <h2 class="panel-title">手动控制</h2>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>手动轴控制</h3>
+                        <p class="panel-desc">拖动滑块松手后，将该轴送到指定行程位置。</p>
+                        <div id="osrManualAxes"></div>
+                        <div class="dash-actions" style="margin-top:12px">
+                            <div class="scan-action-buttons">
+                                <button class="tool-btn" id="osrCenterAll">全部回中位</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="osr-result" style="display:none"></div>
+                </div>
+
+                <div class="settings-panel" id="panel-auto">
+                    <div class="panel-header">
+                        <h2 class="panel-title">自动模式</h2>
+                    </div>
+
+                    <div class="settings-section" style="margin-top:16px">
+                        <div class="axis-detail active" id="osrMode-freeplay">
+                            <div class="form-group">
+                                <!-- 还原默认：圆形箭头图标，放在「动作类型」这一行右侧。
+                                     点它把速度 / 强度 / 动作时长 / 动作类型 / 自动切换 一起拨回默认值。 -->
+                                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+                                    <label class="form-label" style="margin-bottom:0">动作类型</label>
+                                    <button class="tool-btn ob-btn--icon-sm" id="osrSimReset" type="button"
+                                            title="还原默认参数" aria-label="还原默认参数">
+                                        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                                    </button>
+                                </div>
+                                <!-- 选项顺序 = 后端 SimPattern 枚举顺序，新增动作必须同步改两边；
+                                     value >= 7 表示「随机全场」（后端按 selectedIndex >= 枚举数判定）。
+                                     v2.7.23：「波浪 / 环绕 / 螺旋」三种动作已下线，剩下 7 个，序号依次前移。 -->
+                                <select class="form-input" id="osrSimPattern">
+                                    <option value="0">匀速往返</option>
+                                    <option value="1">渐强渐弱</option>
+                                    <option value="2">旋转摇摆</option>
+                                    <option value="3">脉冲</option>
+                                    <option value="4">抖动</option>
+                                    <option value="5">深度按压</option>
+                                    <option value="6">稳态振动</option>
+                                    <option value="7" selected>随机全场</option>
+                                </select>
+                            </div>
+                            <!-- 2.6.60 自动模式三个参数重定标：
+                                 速度 →「次/分」（社区通用单位，20-180 覆盖慢到快，60 次/分≈1Hz 是常用档）；
+                                 强度 → 行程百分比 20-100%（后端 travelRatio 会把超过 100% 的部分钳死，
+                                        旧版给到 200% 等于一半是死行程，所以上限就定 100%，默认 80% 留机械余量）；
+                                 动作时长 → 3-30 秒（旧版 0-1 秒比 800ms 的切换渐变还短，动作永远处在过渡中、
+                                        看不出形状，怎么调都像同一坨）。切换渐变会压到「时长/4」，保证动作有 3/4 时间是纯的。
+                                 后端对应 OsrManager.runSimulationLoop，改前端必须同步改后端。 -->
+                            <div class="axis-ctrl-row">
+                                <span class="axis-ctrl-label">速度</span>
+                                <input type="range" class="axis-slider" id="osrSimSpeed" min="20" max="180" step="5" value="60">
+                                <span class="axis-ctrl-value" id="osrSimSpeedVal">60 次/分</span>
+                            </div>
+                            <div class="axis-ctrl-row">
+                                <span class="axis-ctrl-label">强度</span>
+                                <input type="range" class="axis-slider" id="osrSimIntensity" min="20" max="100" step="5" value="80">
+                                <span class="axis-ctrl-value" id="osrSimIntensityVal">80%</span>
+                            </div>
+                            <div class="axis-ctrl-row">
+                                <span class="axis-ctrl-label">动作时长</span>
+                                <input type="range" class="axis-slider" id="osrSimDuration" min="3" max="30" step="1" value="8">
+                                <span class="axis-ctrl-value" id="osrSimDurationVal">8 秒</span>
+                            </div>
+                            <!-- 是否自动切换动作：勾选 = 每个动作持续「动作时长」后换下一个；
+                                 不勾选 = 锁定当前选中的动作类型（此时「动作时长」不再生效，置灰）。 -->
+                            <div class="form-group">
+                                <!-- 只留勾选框本身，文案统一交给下面这行说明 -->
+                                <label class="form-label" title="自动切换动作"><input type="checkbox" id="osrSimAutoSwitch" checked></label>
+                                <div style="margin-top:6px;font-size:12px;color:#9a9ab5;line-height:1.6">勾选后，每个动作持续「动作时长」这么久再换下一个；不勾选则一直保持当前选中的动作类型。</div>
+                            </div>
+                        </div>
+
+                        <div class="dash-actions" style="margin-top:12px">
+                            <div class="scan-action-buttons">
+                                <button class="btn-save" id="osrPlay">开始</button>
+                                <button class="tool-btn ob-btn--danger" id="osrStop">停止</button>
+                                <!-- 网页操作：用系统浏览器（优先 Chrome）打开 Ayva Stroker Lite 远程控制页。
+                                     应用内 WebView 不支持 Web Serial / Web Bluetooth，连接设备的按钮会点击无反应，
+                                     因此必须在浏览器里打开才能连接设备。 -->
+                                <button class="tool-btn" id="osrOpenWebApp" type="button">网页操作</button>
+                            </div>
+                            <div style="margin-top:8px;font-size:12px;color:#9a9ab5;line-height:1.6">网页操作会在系统浏览器中打开（优先 Edge，没装则依次回退 Chrome 与系统默认浏览器），以便连接设备的蓝牙 / 串口；应用内 WebView 不支持这些接口，点开后在浏览器里连接即可。</div>
+                        </div>
+
+                        <!-- v2.7.21：自动模式「网页操作」下方的浏览器准备提示 + 连接方法图
+                             浏览器为什么要用 Edge：蓝牙 / 串口连接靠的是浏览器的「附近设备」能力，
+                             只有 Edge / Chrome 这类现代浏览器支持，应用内 WebView 不支持，所以必须跳到系统浏览器。 -->
+                        <div class="auto-web-tip" id="autoWebTip">
+                            <div class="auto-web-tip-t">连不上设备？先把浏览器按下面几步准备好</div>
+                            <ol class="auto-web-tip-steps">
+                                <li>下载<strong> Edge 浏览器</strong>并安装，到系统「设置 → 应用 → 默认应用」里把它设为<strong>默认浏览器</strong>。</li>
+                                <li>在<strong>桌面</strong>长按（右键）Edge 图标，打开它的<strong>「附近设备」权限</strong>（个别系统版本叫「附近共享」）。</li>
+                                <li>把本 App <strong>从后台划掉彻底退出</strong>，然后重新进入一次。</li>
+                                <li>回到本页点<strong>「网页操作」</strong>，在浏览器里再按下面的顺序连设备。</li>
+                            </ol>
+                            <div class="auto-web-tip-note">第一次进入要加载一会儿，稍等一下再操作；连上后左上角不再是 Disconnected 就是成功了。</div>
+                            <div class="auto-web-tip-fig">
+                                <img src="/img/connect-guide.jpg" alt="连接设备步骤指引：先选择机型，再点击连接，最后点开始">
+                                <div class="auto-web-tip-cap">① 先选择机型　→　② 点击连接　→　③ 点开始</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="osr-result" style="display:none"></div>
+
+                </div>
+
+                <!-- 脚本生成（2026-09-19 新增）：选一个视频 → 按「音视频混合流」在视频同目录生成同名 .funscript。
+                     混合流的分工：画面运动（块匹配运动矢量）给「何时动 / 往哪动」，音频低频能量给「使多大劲」，
+                     中间做笔触（stroke）分段建模 —— 输出的是有起有落的往返，而不是逐帧强度快照。
+                     原生实现见 osr/ScriptRecorder.kt；接口 /api/record/*。 -->
+                <div class="settings-panel" id="panel-record">
+                    <div class="panel-header">
+                        <h2 class="panel-title">AI生成脚本</h2>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>要处理的视频</h3>
+                        <p class="panel-desc">选一个视频文件，直接点「开始生成」。脚本默认写在视频同一个文件夹；那个文件夹还没授权写入时会自动存到应用目录，播放时按视频名自动匹配，不用先去授权。</p>
+                        <div class="dash-actions">
+                            <div class="scan-action-buttons">
+                                <button class="tool-btn" id="recPickVideo" type="button">选择视频</button>
+                                <button class="btn-save" id="recStart" type="button">开始生成</button>
+                            </div>
+                            <span class="save-hint" id="recFolderHint">未选择</span>
+                        </div>
+                        <div class="rec-picked" id="recPicked" style="display:none">
+                            <div class="rec-picked-row">
+                                <span class="rec-picked-name" id="recPickedName">--</span>
+                                <span class="rec-picked-meta" id="recPickedMeta"></span>
+                            </div>
+                            <div class="rec-picked-warn" id="recPickedWarn"></div>
+                            <!-- 2.6.63：同目录没写权限时脚本会落到应用私有目录，照样能生成；
+                                 想让 .funscript 出现在视频旁边，再走这个可选授权。 -->
+                            <div class="dash-actions" id="recGrantRow" style="display:none;margin-top:8px">
+                                <div class="scan-action-buttons">
+                                    <button class="tool-btn" id="recGrantBtn" type="button">授权保存到视频旁</button>
+                                </div>
+                                <span class="save-hint" style="flex:1">不授权也能生成：脚本会存到应用目录，播放时自动匹配。</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section" style="margin-top:16px">
+                        <h3>混合流参数</h3>
+                        <div class="axis-ctrl-row">
+                            <span class="axis-ctrl-label">分析精度</span>
+                            <input type="range" class="axis-slider" id="recFps" min="4" max="20" step="1" value="10">
+                            <span class="axis-ctrl-value" id="recFpsVal">10 帧/秒</span>
+                        </div>
+                        <div class="axis-ctrl-row">
+                            <span class="axis-ctrl-label">笔触频率上限</span>
+                            <input type="range" class="axis-slider" id="recMaxHz" min="10" max="80" step="5" value="40">
+                            <span class="axis-ctrl-value" id="recMaxHzVal">4.0 Hz</span>
+                        </div>
+                        <div class="axis-ctrl-row">
+                            <span class="axis-ctrl-label">强度灵敏度</span>
+                            <input type="range" class="axis-slider" id="recSens" min="20" max="300" step="10" value="180">
+                            <span class="axis-ctrl-value" id="recSensVal">1.8×</span>
+                        </div>
+                        <div class="axis-ctrl-row">
+                            <span class="axis-ctrl-label">平滑强度</span>
+                            <input type="range" class="axis-slider" id="recSmooth" min="0" max="100" step="5" value="25">
+                            <span class="axis-ctrl-value" id="recSmoothVal">25%</span>
+                        </div>
+                        <div class="axis-ctrl-row">
+                            <span class="axis-ctrl-label">设备延迟补偿</span>
+                            <input type="range" class="axis-slider" id="recOffset" min="-300" max="800" step="50" value="0">
+                            <span class="axis-ctrl-value" id="recOffsetVal">0 ms</span>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">处理时长上限</label>
+                            <select class="form-input" id="recMaxMin">
+                                <option value="0" selected>全部（长视频耗时较久）</option>
+                                <option value="5">只处理前 5 分钟</option>
+                                <option value="10">只处理前 10 分钟</option>
+                                <option value="20">只处理前 20 分钟</option>
+                                <option value="30">只处理前 30 分钟</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label"><input type="checkbox" id="recMulti"> 多轴混合（水平运动额外驱动 L1 前后轴）</label>
+                        </div>
+                    </div>
+
+                    <div class="settings-section" style="margin-top:16px">
+                        <h3>生成进度</h3>
+                        <div class="dash-actions">
+                            <div class="scan-action-buttons">
+                                <button class="tool-btn ob-btn--danger" id="recCancel" type="button" style="display:none">取消</button>
+                            </div>
+                        </div>
+                        <div class="rec-progress" id="recProgressWrap" style="display:none">
+                            <div class="rec-bar"><div class="rec-bar-fill" id="recBarFill"></div></div>
+                            <div class="rec-progress-text">
+                                <span id="recPercent">0%</span>
+                                <span id="recMsg">--</span>
+                                <span class="rec-elapsed" id="recElapsed"></span>
+                            </div>
+                        </div>
+                        <div class="rec-stats" id="recStats"></div>
+                    </div>
+
+                    <div class="osr-result" style="display:none"></div>
+                </div>
+
+                <!-- 手控触板：拖拽圆点实时驱动设备，可录制操作轨迹保存为 .funscript -->
+                <div class="settings-panel" id="panel-touchpad">
+                    <div class="panel-header">
+                        <h2 class="panel-title">手控触板</h2>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>触板</h3>
+                        <p class="panel-desc">按住圆点在触板内自由拖动，设备实时跟随：<b>上下</b> = L0 升降；<b>左右</b> = R0+R1 同步摆动；<b>画圈</b> = 多轴组合动作。双击触板回中，松手后设备保持在当前位置。</p>
+                        <!-- 手动 / 陀螺仪 / 摇一摇三种输入。陀螺仪与摇一摇模式下触板被锁定，
+                             发送路径与手动完全一致，只是坐标来源换成姿态角与摇动冲量。 -->
+                        <div class="tp-mode-switch">
+                            <button class="tool-btn tp-mode-btn ob-btn--primary" data-mode="manual" type="button">手动</button>
+                            <button class="tool-btn tp-mode-btn" data-mode="tiltA" type="button">陀螺仪</button>
+                            <button class="tool-btn tp-mode-btn" data-mode="tiltB" type="button">摇一摇</button>
+                        </div>
+                        <div class="tp-toolbar">
+                            <button class="tool-btn" id="tpRecBtn" type="button">● 开始录制</button>
+                            <span class="save-hint" id="tpRecTime" style="min-width:64px"></span>
+                        </div>
+                        <div class="tp-pad" id="tpPad">
+                            <div class="tp-pad-center"></div>
+                            <div class="tp-knob" id="tpKnob"></div>
+                            <div class="tp-pad-lock" id="tpPadLock">陀螺仪驱动中 · 触板已锁定</div>
+                        </div>
+                        <div class="tp-status">
+                            <span>升降 L0</span><span class="tp-pos" id="tpPosVal">50%</span>
+                            <span>摆动 R0+R1</span><span class="tp-pos" id="tpPosLR">50%</span>
+                            <span class="tp-rec-dot" id="tpRecDot" style="display:none"></span>
+                            <span class="tp-rec-txt" id="tpRecTxt"></span>
+                        </div>
+                        <div class="tp-tilt-box" id="tpTiltBox" style="display:none">
+                            <p class="panel-desc">陀螺仪 / 摇一摇都已锁定触板（手指拖动不生效），一切由手机动作决定：<br>
+                            <b>陀螺仪</b>：左右横摇 / 翻转 + 前后翻转手机，即「把手机当触板用」——左右 = R0+R1 摆动，前后 = L0 升降；<br>
+                            <b>摇一摇</b>：左右横摇手机 = R0+R1 摆动，<b>上下摇手机</b>（微信摇一摇那种甩动）= L0 升降，停手位置就停住。<br>
+                            先摆一个舒服的握持姿势点「当前姿态归中」，之后都按这个姿势算中位。</p>
+                            <div class="axis-ctrl-row">
+                                <span class="axis-ctrl-label">灵敏度</span>
+                                <input type="range" class="axis-slider" id="tpTiltSens" min="0.5" max="4" step="0.1" value="2">
+                                <span class="axis-ctrl-value" id="tpTiltSensVal">2.0×（±25° 走满）</span>
+                            </div>
+                            <div class="axis-ctrl-row" id="tpTiltShakeRow">
+                                <span class="axis-ctrl-label">摇动幅度</span>
+                                <input type="range" class="axis-slider" id="tpTiltShake" min="0.2" max="3" step="0.1" value="1">
+                                <span class="axis-ctrl-value" id="tpTiltShakeVal">1.0×</span>
+                            </div>
+                            <div class="dash-actions">
+                                <div class="scan-action-buttons">
+                                    <button class="tool-btn" id="tpTiltCalib" type="button">当前姿态归中</button>
+                                </div>
+                                <span class="save-hint" id="tpTiltHint" style="flex:1">等待姿态数据…</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section" id="tpSaveBox" style="display:none">
+                        <h3>保存脚本</h3>
+                        <div class="form-group">
+                            <label class="form-label">脚本名称</label>
+                            <input type="text" class="form-input" id="tpName" placeholder="手控_20260926_1200">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">保存目录</label>
+                            <div class="scan-action-buttons">
+                                <button class="tool-btn" id="tpPickFolder" type="button">选择文件夹</button>
+                                <span class="save-hint" id="tpFolderHint" style="flex:1">未选择（不选则保存到本地媒体库 Patterns/）</span>
+                            </div>
+                        </div>
+                        <div class="dash-actions">
+                            <div class="scan-action-buttons">
+                                <button class="btn-save" id="tpSaveBtn" type="button">保存</button>
+                                <button class="tool-btn" id="tpDiscardBtn" type="button">丢弃</button>
+                            </div>
+                        </div>
+                        <div class="save-hint" id="tpSaveHint"></div>
+                    </div>
+
+                    <!-- 已保存脚本列表：保存后落在这里，点「运行」直接播放刚录的轨迹 -->
+                    <div class="settings-section" id="tpRecListBox" style="margin-top:16px">
+                        <h3>已保存脚本</h3>
+                        <div class="tp-script-list" id="tpRecList"></div>
+                        <div class="save-hint" id="tpRecListHint" style="margin-top:8px">还没有保存过脚本</div>
+                    </div>
+
+                    <div class="osr-result" style="display:none"></div>
+                </div>
+
+                <!-- Analyze -->
+                <div class="settings-panel" id="panel-analyze">
+                    <div class="panel-header">
+                        <h2 class="panel-title">自动分析</h2>
+                    </div>
+                    <div class="settings-section">
+                        <div class="dash-row"><span class="dash-label">自动分析</span><span class="dash-value" id="analyzeAutoToggle">--</span></div>
+                        <div class="dash-row"><span class="dash-label">状态</span><span class="dash-value" id="analyzeStatus">--</span></div>
+                        <div class="dash-row"><span class="dash-label">进度</span><span class="dash-value" id="analyzeProgress">--</span></div>
+                        <div class="dash-row"><span class="dash-label">当前</span><span class="dash-value" id="analyzeCurrent">--</span></div>
+                        <div class="dash-row"><span class="dash-label">已填时长</span><span class="dash-value" id="analyzeDurationDone">--</span></div>
+                        <div class="dash-row"><span class="dash-label">已提取封面</span><span class="dash-value" id="analyzeCoverDone">--</span></div>
+                    </div>
+                    <div class="settings-section" style="margin-top:16px">
+                        <button class="tool-btn" id="btnAnalyzeToggle">--</button>
+                        <button class="tool-btn" id="btnAnalyzePause" style="display:none">暂停</button>
+                        <button class="tool-btn" id="btnAnalyzeResume" style="display:none">继续</button>
+                        <button class="tool-btn ob-btn--danger" id="btnAnalyzeStop" style="display:none">停止</button>
+                    </div>
+                </div>
+
+                <!-- 版本信息（2026-09-19 第十一轮）：原来是首页的页内浮层（.hm-sheet#hmVer），
+                     用户要求做成页面 —— 于是搬到设置页里当独立分区，靠 URL 深链 ?panel=ver 进入，
+                     顶栏照旧是「返回 + Orbit」，与其它分区体验一致。
+                     记录数据来自 /js/changelog.js（唯一真值源），渲染逻辑见 app.js 的 verRender()。 -->
+                <div class="settings-panel" id="panel-ver">
+                    <div class="panel-header">
+                        <h2 class="panel-title">版本信息</h2>
+                    </div>
+                    <div class="settings-section">
+                        <div class="ver-team">牛牛工坊开发团队<span class="ver-team-mark">Orbit</span></div>
+                        <div class="ver-update">
+                            <button class="ob-btn ob-btn--primary" id="verCheckBtn" type="button">检查更新</button>
+                            <div class="ver-update-status" id="verUpdateStatus"></div>
+                        </div>
+                        <div class="hm-ver-body" id="verBody"></div>
+                    </div>
+                </div>
+
+                <!-- 脚本编辑：选视频后跳转到完整播放器页 /player/?manualrec=1 进行录制 -->
+                <div class="settings-panel" id="panel-manualrecord">
+                    <div class="panel-header">
+                        <h2 class="panel-title">脚本编辑</h2>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>视频</h3>
+                        <p class="panel-desc">选一个视频，会自动打开播放器页。播放时按住右侧的<b>L0 滑块</b>上下拖动，设备实时跟随，录制的轨迹按<b>视频播放时间轴</b>对齐，保存到视频同目录后随播自动加载。</p>
+                        <div class="dash-actions">
+                            <div class="scan-action-buttons">
+                                <button class="tool-btn" id="mrPickVideo" type="button">选择视频</button>
+                            </div>
+                            <span class="save-hint" id="mrPicked" style="flex:1;display:none">已选：<b id="mrPickedName"></b></span>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>说明</h3>
+                        <p class="panel-desc">播放器内点「录制」可调倍速与范围，拖动 L0 滑块记录轨迹，停止后保存。录制完成后点左上角返回。</p>
+                    </div>
+
+                    <div class="osr-result" id="mrResult" style="display:none"></div>
+                </div>
+
+                <!-- 帮助（2026-09-19）：由首页弹窗改为独立页面 ?panel=help，与版本信息同款 -->
+                <div class="settings-panel" id="panel-help">
+                    <div class="panel-header">
+                        <h2 class="panel-title">帮助</h2>
+                    </div>
+                    <div class="settings-section">
+                        <div class="hm-help-body">
+                            <div class="hm-help-contact">
+                                <div class="hm-help-contact-h">需要人工支持？联系客服</div>
+                                <div class="hm-help-contact-row">
+                                    <span class="hm-help-contact-k">客服微信</span>
+                                    <span class="hm-help-contact-v">yeee9991</span>
+                                    <button class="copy" type="button" id="helpCopyWx">复制</button>
+                                </div>
+                                <p class="hm-help-contact-tip">加客服时把<strong>机器码</strong>（激活弹窗里点「复制」即可拿到）一起发过去，核实后马上给卡密；也可以直接扫下面的客服二维码。</p>
+                                <img class="hm-help-contact-qr" src="/img/wx_qr.jpg" alt="客服微信二维码">
+                            </div>
+                            <script>
+                            (function () {
+                                var b = document.getElementById('helpCopyWx');
+                                if (!b) return;
+                                b.addEventListener('click', function () {
+                                    var ta = document.createElement('textarea');
+                                    ta.value = 'yeee9991';
+                                    ta.style.position = 'fixed';
+                                    ta.style.opacity = '0';
+                                    document.body.appendChild(ta);
+                                    ta.select();
+                                    try {
+                                        document.execCommand('copy');
+                                        var o = b.textContent; b.textContent = '已复制';
+                                        setTimeout(function () { b.textContent = o; }, 1200);
+                                    } catch (e) { }
+                                    document.body.removeChild(ta);
+                                });
+                            })();
+                            </script>
+
+                            <div class="hm-help-h">一、快速上手</div>
+                            <ol class="hm-help-list">
+                                <li>首次进入会提示<strong>试用 15 天</strong>：点「开始试用」才开始计时，到期后仍可进首页，点具体功能才弹激活面板；面板里可直接复制机器码、查看客服微信号与客服二维码。</li>
+                                <li>在「设置 → 媒体库」添加本机或 SMB 网络共享的视频目录，等待扫描完成。</li>
+                                <li>在「设置 → 设备」选择连接方式（USB 串口 / 蓝牙串口 / WiFi-UDP），保存后点「连接测试」确认设备可达。</li>
+                                <li>在「设置 → OSR 轴设置」按你的设备校正各轴方向与行程范围。</li>
+                                <li>返回首页点「视频库」进入媒体库，打开影片即可播放；同目录同名的 <code>.funscript</code> 会自动加载并跟随。</li>
+                            </ol>
+                            <div class="hm-help-h">二、媒体库与视频</div>
+                            <p class="hm-help-p">媒体库支持本机目录与 SMB 网络共享（如 NAS）。进入后按目录浏览，视频以列表展示。点开影片即进入播放页；同目录若存在同名 <code>.funscript</code> 脚本，会自动关联并在播放时同步驱动 OSR 设备。</p>
+                            <p class="hm-help-p">首页「视频库」即你的媒体库入口，点卡片进入；面包屑可逐级返回，根目录显示为「手机存储」。选完视频若要存脚本，会自动弹文件夹授权，选中视频所在文件夹并允许「写入」即可。</p>
+                            <div class="hm-help-h">三、连接 OSR 设备</div>
+                            <p class="hm-help-p">在「设置 → 设备」中选择一种连接方式：</p>
+                            <ul class="hm-help-list">
+                                <li><strong>USB 串口</strong>：手机经 OTG 直连设备，点「检测 USB 设备」并选择串口（同时兼容 USB 驱动板与 CDC-ACM 设备）。</li>
+                                <li><strong>蓝牙串口</strong>：点「蓝牙扫描」配对 SPP/GATT 设备，选中后连接；蓝牙需先配对再选择。</li>
+                                <li><strong>WiFi（UDP）</strong>：填入设备 IP 与端口（默认 <code>192.168.1.88:8000</code>），适合局域网或广播场景。</li>
+                            </ul>
+                            <p class="hm-help-p">配置后务必点「连接测试」：成功表示链路可达；失败会提示原因（IP 不可达 / 端口拒绝 / 设备未开机等）。首页「设备」磁贴的副标题会实时显示链路状态：<strong>离线</strong>（硬件输出关闭）／<strong>待机</strong>（UDP 无回执）／<strong>已连接</strong>（有真实链路证据）／<strong>未连接</strong>／<strong>发送失败</strong>。</p>
+                            <p class="hm-help-p">若设备支持「WiFi 配网」：手机连上设备发出的热点（名称 <code>SR6-Config</code>、密码 <code>12345678</code>），按提示在浏览器打开 <code>192.168.4.1</code>，填入<strong>家里 2.4G 频段</strong>的 Wi-Fi 名称与密码即可完成配网；<strong>配网必须用 2.4GHz 频段的 Wi-Fi，5GHz 频段的 Wi-Fi 不支持</strong>。</p>
+                            <div class="hm-help-h">四、OSR 轴设置</div>
+                            <p class="hm-help-p">按设备型号校正 6 个轴的方向（正向 / 反向）与行程范围，避免驱动时方向错误或超程。设置保存后立即生效，后续脚本与自动模式都会沿用。</p>
+                            <p class="hm-help-p">两个补偿开关（默认都是<strong>关闭</strong>，任一改动都会一起提交）：</p>
+                            <ul class="hm-help-list">
+                                <li><strong>旋转补偿</strong>（作用于 R0）：<code>关闭</code> / <code>跟随L0</code>（用 L0 的轨迹驱动 R0）／<code>循环摆动</code>（按固定幅度往复）。</li>
+                                <li><strong>俯卧补偿</strong>（作用于 R1）：<code>关闭</code> / <code>循环摆动</code>；任何脚本不含 R1 轴时会自动按设定幅度注入。</li>
+                            </ul>
+                            <p class="hm-help-p">点「恢复默认值」会立即把两个补偿都重置为关闭、幅度恢复默认并落库；只刷新界面数字不落库等于没改。</p>
+                            <div class="hm-help-h">五、脚本播放</div>
+                            <p class="hm-help-p">在「脚本播放」页选择已加载的 <code>.funscript</code> 脚本，可预览轴轨迹（可视化曲线）并播放，支持多轴同步，配合影片时间轴精准跟随。</p>
+                            <p class="hm-help-p">多轴脚本的文件命名：<strong>主脚本</strong>与视频同名，另加后缀 <code>.&lt;轴&gt;.funscript</code>，轴名可取 <code>L0/L1/L2</code>（上下、左右、翻滚）与 <code>R0/R1/R2</code>（旋转、俯仰、翻滚）。多个轴文件放在视频同目录即可自动识别。</p>
+                            <div class="hm-help-h">六、AI生成脚本</div>
+                            <p class="hm-help-p">影片没有脚本时，可以用「AI生成脚本」自己生成一份。点「选择视频」挑一个视频，调好参数后点「开始生成」即可，<strong>不需要先授权文件夹</strong>。</p>
+                            <p class="hm-help-p">默认参数已经把<strong>动作幅度</strong>调得比较大（强度灵敏度 1.8×、平滑 25%），要更柔可以直接把「强度灵敏度」往下拖；脚本优先写在视频同一个文件夹；那个文件夹还没授权写入时，会自动存到<strong>应用私有目录</strong>，播放时按视频名自动匹配，功能完全一样。如果你希望 <code>.funscript</code> 就落在视频旁边，点「授权保存到视频旁」一次即可，之后同目录不再问。</p>
+                            <p class="hm-help-p">生成用的是<strong>音视频混合流</strong>：画面运动决定<strong>什么时候动、往哪个方向动</strong>，音频的低频能量决定<strong>这一下使多大劲</strong>，再把它们合成一串有起有落的往返动作。三个最常调的参数：<strong>笔触频率上限</strong>（设备跟不上的高频往复要压掉，一般 3–5 Hz）、<strong>强度灵敏度</strong>（整体行程大小）、<strong>平滑强度</strong>（相邻笔触的力度是否均匀）。若感觉画面已经动了设备才动，把<strong>设备延迟补偿</strong>往正方向调。</p>
+                            <p class="hm-help-p">生成结果会缓存：若当时没授权，可先生成再补授权，随后用「改存到视频旁」一键落盘，不必重跑分析。</p>
+                            <p class="hm-help-p">脚本会写成与视频同名的 <code>.funscript</code> 放在视频旁边，回「视频库」打开该视频即会自动加载并跟随；已有同名脚本会被覆盖。</p>
+                            <div class="hm-help-h">七、脚本编辑（随播录制）</div>
+                            <p class="hm-help-p">「脚本编辑」= 边看片边录轨迹：选一个视频后自动跳进播放器（横屏整屏录制台），用播放器右缘的 <strong>L0 浮动滑块</strong>上下拖动即可实时驱动设备，<strong>R0 + R1 固定 50%</strong>；录制时按<strong>视频播放时间轴</strong>采样 L0，停止后保存到视频同目录，下次打开该视频自动跟随。退出录制台会顺手把设备送回中位。</p>
+                            <ul class="hm-help-list">
+                                <li><strong>倍速</strong>：录制前在弹窗里选 0.25 / 0.5 / 0.75 / 1 倍，慢放录出来动作更细腻。</li>
+                                <li><strong>范围</strong>：设定这轮录制允许的行程区间，超出部分会被夹住。</li>
+                                <li>界面分层为顶栏（返回 + 录制按钮、倍速与范围）、右缘 L0 竖滑块、底部波形与录制时间，窄屏横屏也互不遮挡。</li>
+                            </ul>
+                            <p class="hm-help-p">录完点左上角返回即可；录制台内不会再弹试用胶囊等界面。</p>
+                            <div class="hm-help-h">八、手控触板与姿态</div>
+                            <ul class="hm-help-list">
+                                <li><strong>手控触板</strong>：拖动各轴圆点实时驱动设备，可把操作轨迹录成 <code>.funscript</code> 保存。</li>
+                                <li><strong>姿态（陀螺仪）</strong>：靠手机陀螺仪驱动。<code>tiltA</code> 是倾角（手机前倾 / 后仰）；<code>tiltB</code> 是摇一摇（竖向摇 → L0，横向摇 → R0 + R1）。</li>
+                            </ul>
+                            <p class="hm-help-p">两面板互斥：同时只能有一个在接管驱动，打开其中一个会自动退出另一个。</p>
+                            <div class="hm-help-h">九、自动模式</div>
+                            <p class="hm-help-p">按一套固定节奏自动动，三个参数：</p>
+                            <ul class="hm-help-list">
+                                <li><strong>速度</strong>：节拍 20–180 BPM（默认 60），设备跟得上就往上加，跟不上会被截顶。</li>
+                                <li><strong>强度</strong>：行程比例 20%–100%（默认 80%），小幅度更柔和、大幅度更有力。</li>
+                                <li><strong>动作时长</strong>：单次 3–30 秒（默认 8 秒）。</li>
+                                <li><strong>切换</strong>：关掉自动切换后，动作会锁在当前设置不再轮替。</li>
+                            </ul>
+                            <p class="hm-help-p">运行中可直接切模式，系统会自动停掉当前模式再按新模式启动，不用先手动停止。</p>
+                            <div class="hm-help-h">十、VR 一体机与 VR 盒子</div>
+                            <p class="hm-help-p">在「VR 一体机」页连接外部 VR 播放器（DeoVR / HereSphere）。连接后，影片时间轴作为统一时间源，OSR 脚本与之对齐，实现“视听 + 体感”同步。首页「VR盒子」则是用手机放进 VR 眼镜盒里看，两者互不影响。</p>
+                            <div class="hm-help-h">十一、切到后台也要继续跑</div>
+                            <p class="hm-help-p">播放影片或运行自动模式时切到后台（甚至锁屏），设备会继续跟随 —— 靠的是多层配合：<strong>播放时钟在原生侧按系统时间自驱</strong>（不依赖网页的定时器）、<strong>前台服务 + 唤醒锁</strong>（进程不被冻结、息屏后 CPU 与 WiFi 不被降频）、<strong>兜底闹钟</strong>（服务万一被回收会自动拉回）、<strong>页面被告知"已在后台"</strong>（视频被系统静默暂停时也不会误报「已暂停」）。</p>
+                            <p class="hm-help-p">国产 ROM（小米 / 华为 / OPPO / vivo 等）还有一层独立的「后台耗电管理 / 自启动管理」，比前台服务更强，没进白名单照样会被冻结。请到「设备」页找到<strong>后台运行</strong>卡片，点「允许后台运行」把本应用加入电池优化白名单；若仍被限制，再到系统设置的「电池 → 后台耗电管理」里把 Orbit 设为「无限制 / 允许后台活动」。</p>
+                            <div class="hm-help-h">十二、试用与激活</div>
+                            <ul class="hm-help-list">
+                                <li>首次进入可<strong>试用 15 天</strong>，点「开始试用」才开始计时；到期后是<strong>软拦截</strong>——还能进首页，点功能才弹激活面板。</li>
+                                <li>激活流程：复制<strong>机器码</strong> → 发给客服微信号 <code>yeee9991</code>（或扫客服二维码）→ 拿到卡密 → 贴回输入框点「激活」。</li>
+                                <li>卡密绑定设备，共 <strong>116 个字符</strong>，必须以 <code>ORB1-</code> 开头；整段复制，别改大小写，注意 0 与 O、1 与 I/l 的区别。粘贴时会自动去掉换行和多余空格。</li>
+                                <li>同一张卡只能绑一台机器：换机要用新机器码找客服换卡。</li>
+                                <li>卡已过期可以找客服续期；客户端会先做本机自检（长度、前缀、签名），提示「signature 不对」时优先比对字符有没有被改动或截断。</li>
+                                <li><strong>请勿在设置里清除本应用数据</strong>：清除后机器码会变，已激活的卡密将失效。</li>
+                            </ul>
+                            <p class="hm-help-p">已知硬边界（本地方案只能做到这样）：Root / Magisk、改过安装包、模拟器、应用双开多用户、开了 WebView 调试，都可能绕过校验。</p>
+                            <div class="hm-help-h">十三、在线更新</div>
+                            <p class="hm-help-p">「版本信息」页的<strong>检查更新 / 立即更新</strong>是同一个按钮：没发现新版时显示「检查更新」，发现新版后变成「立即更新」，点一下就下载 APK 并安装（主源为腾讯云静态托管，失败自动降级 GitHub Releases）。下载完成会先校验完整性再交给系统安装，中途可在同一按钮看到进度。</p>
+                            <p class="hm-help-p">「版本信息」页会列出真实发过的全部版本与更新点，更新记录里出现的每个版本号都对应一个正式包。</p>
+                            <div class="hm-help-h">十四、常见问题</div>
+                            <ul class="hm-help-list">
+                                <li><strong>首页显示"离线"</strong>：尚未连上设备，先到「设备」完成连接测试。</li>
+                                <li><strong>蓝牙已连接但发不出指令</strong>：设备已配对却未真正建立 SPP 链路，重扫并重新选择设备。</li>
+                                <li><strong>指令无反应</strong>：确认连接方式、IP / 端口与设备端一致。</li>
+                                <li><strong>脚本不跟随影片</strong>：检查影片与 <code>.funscript</code> 是否同名同目录；多轴脚本还要看轴后缀对不对得上。</li>
+                                <li><strong>配网配不上</strong>：绝大多数是 Wi-Fi 频段问题 —— 必须用 <strong>2.4GHz</strong> 频段的 Wi-Fi，<strong>5GHz 频段的 Wi-Fi 不支持配网</strong>；配完确认手机连的是配好网后的那个网络。</li>
+                                <li><strong>配网页打不开（连接超时 / 页面没有加载出来）</strong>：确认已连上设备热点 <code>SR6-Config</code>（密码 <code>12345678</code>），且地址栏是 <code>192.168.4.1</code>；页面会给出「重试」与「用系统浏览器打开」两个出口。</li>
+                                <li><strong>提示「需要授权保存位置」</strong>：选完视频后会自动弹出文件夹选择器，选中视频所在文件夹并允许「写入」即可；部分目录（如系统 Download 根目录）不开放写入，可把视频移到 Movies 等普通目录。</li>
+                                <li><strong>生成出来的脚本太乱或太软</strong>：先降「笔触频率上限」，再调「强度灵敏度」与「平滑强度」，多生成几次对比。</li>
+                                <li><strong>切到后台设备就停</strong>：先看「设备 → 后台运行」卡片是否显示"已允许"；未允许就点一下按钮加白名单。若已允许仍会停，通常是该机型的「后台耗电管理」把 Orbit 归到了智能省电，去系统设置里改成「无限制」。</li>
+                                <li><strong>弹激活窗口要卡密但我买过了</strong>：把机器码发给客服微信号 <code>yeee9991</code>（或扫客服二维码），客服核对订单后发你 116 字符的完整卡密，整段粘回输入框即可。</li>
+                                <li><strong>点「检查更新」提示 404</strong>：更新服务器上还没发布过在线更新版本，属正常状态，等发布后这里就能一键更新。</li>
+                                <li><strong>自动页「网页操作」里的网站打不开</strong>：那是外部站点，打不开多半是手机当前网络访问不了它（境外站点较常见）。页面会把具体原因写在上面，可以点「重试」或「用系统浏览器打开」；换一个网络往往就好了。</li>
+                            </ul>
+                            <p class="hm-help-note">本应用所有数据均保存在本机，不会上传任何服务器。</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Detail Pane -->
+<div class="tab-pane" id="pane-detail">
+    <div class="page-pad">
+        <div class="detail-header">
+            <div class="detail-side">
+                <div class="detail-poster" id="detailPoster"><img id="detailThumb" data-hide-on-error src="" alt=""></div>
+                <div class="detail-about">
+                    <div class="detail-intro" id="detailIntro" style="display:none">
+                        <div class="detail-section-title">简介</div>
+                        <div class="detail-plot" id="detailPlot"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="detail-info">
+                <div class="detail-hero-content">
+                    <h1 class="detail-title" id="detailTitle"></h1>
+                    <div class="detail-meta">
+                        <span class="detail-meta-item" id="detailSource">--</span>
+                        <span class="detail-meta-sep">/</span>
+                        <span class="detail-meta-item" id="detailYear" style="display:none"></span>
+                        <span class="detail-meta-sep" id="detailMetaSep2" style="display:none">/</span>
+                        <span class="detail-meta-item" id="detailMpaa" style="display:none"></span>
+                        <span class="detail-meta-sep" id="detailMetaSep3" style="display:none">/</span>
+                        <span class="detail-meta-item" id="detailDuration" style="display:none"></span>
+                        <span class="detail-meta-sep" id="detailMetaSep4" style="display:none">/</span>
+                        <span class="detail-meta-item" id="detailResolution" style="display:none"></span>
+                        <span class="detail-meta-sep" id="detailMetaSep5" style="display:none">/</span>
+                        <span class="detail-meta-item" id="detailBitrate" style="display:none"></span>
+                    </div>
+                </div>
+                <div class="detail-action-panel">
+                    <div class="detail-quick-actions">
+                        <a class="detail-continue-btn" id="detailContinuePlay" href="#" target="_blank" style="display:none"><span class="play-glyph"></span><span id="detailContinueLabel">继续播放</span></a>
+                        <div class="detail-toolbar" id="detailToolbar" style="display:none">
+                            <button class="detail-icon-btn" id="btnRefreshNfo" style="display:none" title="刷新元数据"><img class="mi detail-action-icon" src="/icons/refresh_128dp.png" alt="刷新"></button>
+                            <button class="detail-icon-btn" id="btnFavorite" title="收藏"><span class="heart-icon" aria-hidden="true"></span></button>
+                            <div class="detail-more-wrap">
+                                <button class="detail-icon-btn" id="btnMoreActions" title="更多操作"><span class="more-dots" aria-hidden="true"></span></button>
+                                <div class="detail-more-menu" id="detailMoreMenu" style="display:none">
+                                    <button class="detail-menu-item" id="btnPlayHereSphere">用 HereSphere 播放</button>
+                                    <button class="detail-menu-item" id="btnEditItemMetadata">编辑元数据</button>
+                                    <button class="detail-menu-item" id="btnRegenThumb">重新生成封面</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="detail-section detail-parts-section" id="detailPartsList" style="display:none">
+                        <div class="detail-section-title" id="detailPartsTitle">选集</div>
+                        <div class="parts-grid" id="detailPartsGrid"></div>
+                    </div>
+                    <div class="detail-taxonomy" id="detailTaxonomy">
+                        <div id="detailGenresWrap" class="detail-field" style="display:none">
+                            <div class="detail-section-title">类别</div>
+                            <div class="detail-genres" id="detailGenres"></div>
+                        </div>
+                        <div class="detail-field detail-actors" id="detailActors" style="display:none">
+                            <div class="detail-section-title">演员</div>
+                            <div id="detailActorList" class="actor-list"></div>
+                        </div>
+                    </div>
+                    <div class="detail-meta-extra" id="detailMetaExtra" style="display:none">
+                        <div class="detail-meta-row" id="detailStudioRow" style="display:none"><span class="detail-meta-label">制片厂</span><span class="detail-meta-value" id="detailStudio"></span></div>
+                        <div class="detail-meta-row" id="detailDirectorRow" style="display:none"><span class="detail-meta-label">导演</span><span class="detail-meta-value" id="detailDirector"></span></div>
+                        <div class="detail-meta-row" id="detailTaglineRow" style="display:none"><span class="detail-meta-label">标语</span><span class="detail-meta-value" id="detailTagline"></span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Actor Detail Pane -->
+<div class="tab-pane" id="pane-actor-detail">
+    <div class="page-pad">
+        <div class="actor-detail-header">
+            <div class="actor-detail-avatar" id="actorDetailAvatar" data-initial="#"></div>
+            <div class="actor-detail-main">
+                <h1 class="detail-title" id="actorDetailName"></h1>
+                <div class="detail-meta actor-detail-meta">
+                    <span class="detail-meta-item" id="actorDetailOriginal" style="display:none"></span>
+                    <span class="detail-meta-sep" id="actorDetailSep1" style="display:none">/</span>
+                    <span class="detail-meta-item" id="actorDetailCount">--</span>
+                    <span class="detail-meta-sep">/</span>
+                    <span class="detail-meta-item" id="actorDetailClicks">--</span>
+                </div>
+                <div class="actor-detail-actions">
+                    <button class="detail-icon-btn" id="btnActorMoreActions" type="button" title="更多操作"><span class="more-dots" aria-hidden="true"></span></button>
+                    <div class="detail-more-menu actor-more-menu" id="actorMoreMenu" style="display:none">
+                        <button class="detail-menu-item" id="btnEditActor" type="button">编辑元数据</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="actor-detail-section">
+            <div class="library-toolbar actor-detail-toolbar">
+                <div>
+                    <div class="section-title">出演影片</div>
+                    <div class="library-subtitle" id="actorDetailSubtitle"></div>
+                </div>
+            </div>
+            <div id="actorDetailGrid" class="grid"></div>
+            <div id="actorDetailPagination" class="pagination" style="display:none"></div>
+            <div id="actorDetailEmpty" class="empty" style="display:none">
+                <div class="empty-icon"><span class="icon-circle icon-circle-lg"><img class="mi-lg" src="/icons/video_library_128dp.png" alt=""></span></div>
+                <div class="empty-text">暂无关联影片</div>
+            </div>
+            <div id="actorDetailLoading" class="spinner" style="display:none">加载中...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Bluetooth Device Picker Pane（全屏蓝牙设备列表） -->
+<div class="tab-pane" id="pane-btdevices">
+    <div class="page-pad bt-dev-page">
+        <div class="bt-dev-head">
+            <button class="bt-dev-back" id="btDevBack" type="button" title="返回">
+                <span class="icon-circle icon-circle-sm"><img class="mi" src="/icons/arrow_back_128dp.png" alt="返回"></span>
+            </button>
+            <span class="bt-dev-title">蓝牙设备</span>
+            <button class="bt-dev-scan" id="btDevScan" type="button" title="重新扫描">重新扫描</button>
+        </div>
+        <div class="bt-dev-hintrow">
+            <span class="bt-dev-status" id="btDevStatus">正在扫描…</span>
+            <button type="button" class="tool-btn bt-dev-perm" id="btDevPerm" style="display:none">授权蓝牙权限</button>
+            <button type="button" class="tool-btn bt-dev-perm" id="btDevAppSettings" style="display:none">去系统设置</button>
+            <button type="button" class="tool-btn bt-dev-perm" id="btDevEnable" style="display:none">去开启蓝牙</button>
+        </div>
+        <div class="device-list bt-dev-list" id="btDevList"></div>
+    </div>
+</div>
+
+<!-- 轴参数设置弹窗（视频库页「轴设置」与设置页「OSR 轴设置」共用） -->
+<div class="modal-overlay" id="axisModal" style="display:none">
+    <div class="modal-dialog axis-dialog">
+        <div class="modal-header">
+            <div class="ax-head">
+                <h3 class="modal-title">轴参数设置</h3>
+                <p class="ax-sub" id="axisModalSub">L0 · 上下</p>
+            </div>
+            <button class="modal-close" id="axisModalClose" type="button">&times;</button>
+        </div>
+        <div class="modal-body ax-body">
+            <!-- 全局项（不随轴标签页变化）：旋转补偿 / 俯卧补偿两个独立开关。
+                 放在标签页之前，避免被理解成「只对当前选中的轴生效」。
+                 开关即时保存（专用端点 /api/osr/single-axis-fill，body {rotation, prone}），不跟随弹窗的「保存」按钮。
+                 2026-09-19：从设置页「OSR 轴设置」面板移来（用户反馈在轴设置里看不到）。 -->
+            <section class="ax-card ax-card--switch ax-card--global" id="rotationFillCard">
+                <div class="ax-row">
+                    <div class="ax-row-main">
+                        <div class="ax-row-title">旋转补偿（R0）</div>
+                    </div>
+                    <div class="ax-seg" id="rotationFillSeg" role="group" aria-label="旋转补偿模式">
+                        <button type="button" class="ax-seg-btn" data-mode="off">关闭</button>
+                        <button type="button" class="ax-seg-btn" data-mode="follow">跟随L0</button>
+                        <button type="button" class="ax-seg-btn" data-mode="sweep">循环自动</button>
+                    </div>
+                </div>
+                <div class="ax-row-hint ax-row-hint--block">脚本仅含单轴且不含 R0 时自动补偿：跟随L0动 = R0 跟随 L0 主轴运动；循环自动 = R0 往复摆动。多轴脚本或脚本自带 R0 时不补。幅度 = 满摆角 180° 的百分比。</div>
+                <div class="ax-amp">
+                    <input type="range" class="ax-slider" id="rotationFillAmp" min="20" max="150" step="5" value="85" aria-label="旋转补偿幅度">
+                    <label class="ax-num ax-num--suffix">
+                        <input type="number" id="rotationFillAmpVal" min="20" max="150" step="5" inputmode="numeric" value="85">
+                        <span class="ax-num-unit">%</span>
+                    </label>
+                </div>
+                <div class="ax-scale"><span>20%</span><span>150%</span></div>
+            </section>
+            <section class="ax-card ax-card--switch ax-card--global" id="proneFillCard">
+                <div class="ax-row">
+                    <div class="ax-row-main">
+                        <div class="ax-row-title">俯卧补偿（R1）</div>
+                    </div>
+                    <div class="ax-seg" id="proneFillSeg" role="group" aria-label="俯卧补偿模式">
+                        <button type="button" class="ax-seg-btn" data-mode="off">关闭</button>
+                        <button type="button" class="ax-seg-btn" data-mode="sweep">循环自动</button>
+                    </div>
+                </div>
+                <div class="ax-row-hint ax-row-hint--block">脚本不含 R1 时自动补偿（俯仰轴，对齐 Doro Player）：循环自动 = R1 往复摆动（摆幅 180°）。脚本自带 R1 时不补。幅度 = 满摆角 180° 的百分比。</div>
+                <div class="ax-amp">
+                    <input type="range" class="ax-slider" id="proneFillAmp" min="20" max="150" step="5" value="80" aria-label="俯卧补偿幅度">
+                    <label class="ax-num ax-num--suffix">
+                        <input type="number" id="proneFillAmpVal" min="20" max="150" step="5" inputmode="numeric" value="80">
+                        <span class="ax-num-unit">%</span>
+                    </label>
+                </div>
+                <div class="ax-scale"><span>20%</span><span>150%</span></div>
+            </section>
+
+            <div class="ax-tabs" id="axisModalTabs">
+                <div class="axis-tab active" data-axis="L0"><b>L0</b><i>上下</i></div>
+                <div class="axis-tab" data-axis="L1"><b>L1</b><i>前后</i></div>
+                <div class="axis-tab" data-axis="L2"><b>L2</b><i>左右</i></div>
+                <div class="axis-tab" data-axis="R0"><b>R0</b><i>旋转</i></div>
+                <div class="axis-tab" data-axis="R1"><b>R1</b><i>俯仰</i></div>
+                <div class="axis-tab" data-axis="R2"><b>R2</b><i>翻滚</i></div>
+            </div>
+
+            <section class="ax-card ax-card--switch">
+                <div class="ax-row">
+                    <div class="ax-row-main">
+                        <div class="ax-row-title">方向反转</div>
+                        <div class="ax-row-hint">交换该轴的运动方向</div>
+                    </div>
+                    <div class="ax-switch">
+                        <span class="ax-switch-text" id="axisRevText">正转</span>
+                        <div class="toggle" id="axisModalRev" role="switch" aria-checked="false" tabindex="0"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="ax-card">
+                <div class="ax-card-head">
+                    <div class="ax-card-title">运动范围</div>
+                    <div class="ax-badge" id="axisRangeLabel">0 – 9999</div>
+                </div>
+                <div class="ax-nums">
+                    <label class="ax-num">
+                        <span class="ax-num-cap">最小</span>
+                        <input type="number" id="axisRangeMinNum" min="0" max="9999" step="1" inputmode="numeric" value="0">
+                    </label>
+                    <span class="ax-nums-line"></span>
+                    <label class="ax-num">
+                        <span class="ax-num-cap">最大</span>
+                        <input type="number" id="axisRangeMaxNum" min="0" max="9999" step="1" inputmode="numeric" value="9999">
+                    </label>
+                </div>
+                <div class="axis-range" id="axisRange">
+                    <div class="axis-range-track"></div>
+                    <div class="axis-range-fill" id="axisRangeFill"></div>
+                    <input type="range" class="axis-range-input" id="axisRangeMin" min="0" max="9999" step="1" value="0" aria-label="最小值">
+                    <input type="range" class="axis-range-input" id="axisRangeMax" min="0" max="9999" step="1" value="9999" aria-label="最大值">
+                </div>
+                <div class="ax-scale"><span>0</span><span>9999</span></div>
+            </section>
+
+            <section class="ax-card">
+                <div class="ax-card-head">
+                    <div class="ax-card-title">幅度</div>
+                    <div class="ax-row-hint">运动行程的缩放比例</div>
+                </div>
+                <div class="ax-amp">
+                    <input type="range" class="ax-slider" id="axisAmp" min="0" max="300" step="5" value="100" aria-label="幅度">
+                    <label class="ax-num ax-num--suffix">
+                        <input type="number" id="axisAmpVal" min="0" max="300" step="5" inputmode="numeric" value="100">
+                        <span class="ax-num-unit">%</span>
+                    </label>
+                </div>
+                <div class="ax-scale"><span>0%</span><span>300%</span></div>
+            </section>
+        </div>
+        <div class="modal-footer axis-modal-footer">
+            <button class="tool-btn" id="axisModalReset" type="button">恢复默认参数</button>
+            <button class="tool-btn" id="axisModalCancel" type="button">取消</button>
+            <button class="btn-save" id="axisModalSave" type="button">保存</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="libraryEditModal" style="display:none">
+    <div class="modal-dialog library-edit-dialog">
+        <div class="modal-header">
+            <h3 class="modal-title" id="libraryEditTitle">添加媒体库</h3>
+            <button class="modal-close" id="btnCloseLibraryEdit" type="button">&times;</button>
+        </div>
+        <div class="modal-body library-edit-body">
+            <div class="library-edit-grid">
+                <div>
+                    <label class="form-label">媒体库类型</label>
+                    <select class="form-input" id="libraryEditType">
+                        <option value="local">本地</option>
+                        <option value="smb">SMB</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">媒体库名称</label>
+                    <input class="form-input" id="libraryEditName" placeholder="例如：收藏、VR、演员合集">
+                </div>
+            </div>
+            <label class="form-label">根路径</label>
+            <div class="form-input form-input-readonly" id="libraryEditRootDisplay" data-root-path="">--</div>
+            <label class="form-label">子目录（在根路径下）</label>
+            <div class="input-with-btn">
+                <input class="form-input" id="libraryEditPath" placeholder="留空为根目录，或点击浏览选择子目录">
+                <button class="tool-btn" id="btnBrowseLibraryPath" type="button">浏览</button>
+            </div>
+            <label class="form-label">封面</label>
+            <div class="input-with-btn">
+                <input class="form-input" id="libraryEditCover" placeholder="可选：poster.png、cover.jpg 或完整图片路径">
+                <button class="tool-btn" id="btnUploadLibraryCover" type="button">上传封面</button>
+            </div>
+            <input type="file" id="libraryCoverFileInput" accept="image/*" style="display:none">
+        </div>
+        <div class="modal-footer">
+            <span class="save-hint" id="libraryEditHint">已保存</span>
+            <button class="btn-save" id="btnSaveLibraryEdit" type="button">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- Directory Picker Modal -->
+<div class="modal-overlay" id="pathBrowseModal" style="display:none">
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <h3 class="modal-title" id="pathBrowseTitle">选择目录</h3>
+            <button class="modal-close" id="btnClosePathBrowse" type="button">&times;</button>
+        </div>
+        <div class="modal-root-info" id="pathBrowseRootInfo">根路径: <strong id="pathBrowseRootLabel">--</strong></div>
+        <div class="modal-breadcrumb" id="pathBrowseBreadcrumb"></div>
+        <div class="modal-body" id="pathBrowseList">
+            <div class="spinner">加载中...</div>
+        </div>
+        <div class="modal-footer">
+            <span class="modal-path-display" id="pathBrowseDisplay">/ (根目录)</span>
+            <button class="btn-save" id="btnSelectPath" type="button">选择当前目录</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="itemEditModal" style="display:none">
+    <div class="modal-dialog item-edit-dialog">
+        <div class="modal-header">
+            <h3 class="modal-title">编辑元数据</h3>
+            <button class="modal-close" id="btnCloseItemEdit" type="button">&times;</button>
+        </div>
+        <div class="modal-body item-edit-body">
+            <div class="item-edit-grid item-edit-main-grid">
+                <div>
+                    <label class="form-label">标题</label>
+                    <input class="form-input" id="itemEditTitle">
+                </div>
+                <div>
+                    <label class="form-label">年份</label>
+                    <input class="form-input" id="itemEditYear" inputmode="numeric">
+                </div>
+                <div>
+                    <label class="form-label">&#35780;&#20998;</label>
+                    <input class="form-input" id="itemEditRating" inputmode="decimal" placeholder="0-10">
+                </div>
+            </div>
+            <label class="form-label">类别</label>
+            <textarea class="form-input" id="itemEditGenres" placeholder="一行一个，或用逗号分隔"></textarea>
+            <label class="form-label">演员</label>
+            <textarea class="form-input" id="itemEditActors" placeholder="一行一个，或用逗号分隔"></textarea>
+            <div class="item-edit-grid">
+                <div>
+                    <label class="form-label">制片厂</label>
+                    <input class="form-input" id="itemEditStudio">
+                </div>
+                <div>
+                    <label class="form-label">导演</label>
+                    <input class="form-input" id="itemEditDirector">
+                </div>
+            </div>
+            <label class="form-label">简介</label>
+            <textarea class="form-input item-edit-plot" id="itemEditPlot"></textarea>
+        </div>
+        <div class="modal-footer">
+            <span class="save-hint" id="itemEditHint">已保存</span>
+            <button class="btn-save" id="btnSaveItemEdit" type="button">保存</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="actorEditModal" style="display:none">
+    <div class="modal-dialog actor-edit-dialog">
+        <div class="modal-header">
+            <h3 class="modal-title">编辑演员资料</h3>
+            <button class="modal-close" id="btnCloseActorEdit" type="button">&times;</button>
+        </div>
+        <div class="modal-body actor-edit-body">
+            <div class="actor-edit-photo">
+                <div class="actor-edit-preview" id="actorEditPreview" data-initial="#"></div>
+                <button class="tool-btn" id="btnActorPhotoPick" type="button">上传照片</button>
+                <input id="actorPhotoInput" type="file" accept="image/*" style="display:none">
+            </div>
+            <div class="actor-edit-fields">
+                <label class="form-label">原始名字</label>
+                <input class="form-input" id="actorEditName" readonly>
+                <label class="form-label">显示名字</label>
+                <input class="form-input" id="actorEditDisplayName" placeholder="用于页面主标题">
+                <label class="form-label">中文别名</label>
+                <input class="form-input" id="actorEditAlias" placeholder="方便识别的中文名">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <span class="save-hint" id="actorEditHint">已保存</span>
+            <button class="btn-save" id="btnSaveActorEdit" type="button">保存</button>
+        </div>
+    </div>
+</div>
+
+</div>
+
+<script src="/js/custom-select.js?v=20261001r"></script>
+<script src="/js/license.js?v=20261001r"></script>
+<!-- 试用 / 卡密激活：必须早于业务脚本，守卫才能在功能点击之前生效 -->
+<script src="/js/changelog.js?v=20261001r"></script>
+<script src="/js/app.js?v=20261001r"></script>
+<script src="/js/osr.js?v=20261001r"></script>
+<script src="/js/touchpad.js?v=20261001r"></script>
+<script src="/js/manual_record.js?v=20261001r"></script>
+</body>
+</html>
