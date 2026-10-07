@@ -46,6 +46,13 @@ targets:
       #    导致 UISupportedInterfaceOrientations 等键缺失，被 Apple 判 "No orientations were specified"。
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.niuniu.orbit
+      # ⚠ 关键：Apple 上传曾判 "No orientations were specified" / 缺 UILaunchScreen，
+      #   但源码 Info.plist 里两者都写了。dump 产物发现 Orbit.app/Info.plist 只有 Xcode
+      #   自动生成的那些键（连 CFBundleDisplayName、隐私描述、NSAppTransportSecurity 都没有）
+      #   → 说明我们的 Info.plist 被忽略了，Xcode 走的是「按构建设置生成 plist」这条路。
+      #   显式关掉生成 + 指回文件，让 Orbit/Info.plist 成为产物 Info.plist 的唯一来源。
+      GENERATE_INFOPLIST_FILE: "NO"
+      INFOPLIST_FILE: Orbit/Info.plist
       INFOPLIST_KEY_UIUserInterfaceStyle: Dark
       # 显式声明 AppIcon 集合名，确保 asset catalog 被编译、图标真正进包
       ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
