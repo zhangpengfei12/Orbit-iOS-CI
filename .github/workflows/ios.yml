@@ -223,6 +223,21 @@ jobs:
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
             archive
 
+      - name: 诊断构建产物（app bundle 里真正的 Info.plist / 图标）
+        if: steps.sig.outputs.ready == 'true'
+        run: |
+          APP="$RUNNER_TEMP/Orbit.xcarchive/Products/Applications/Orbit.app"
+          echo "=== app bundle 内容 ==="
+          ls -la "$APP" | head -30
+          echo ""
+          echo "=== 产物 Info.plist 全量键值 ==="
+          plutil -p "$APP/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Print" "$APP/Info.plist"
+          echo ""
+          echo "=== 图标产物 ==="
+          ls -la "$APP/AppIcon60x60@2x.png" "$APP/AppIcon76x76@2x.png" 2>/dev/null \
+            | head -5 || echo "(未在同路径找到图标，正常：actool 会把 PNG 打到根目录或 Assets.car)"
+          find "$APP" -name "AppIcon*" -maxdepth 2 | head -10 || true
+
       - name: 生成 ExportOptions
         if: steps.sig.outputs.ready == 'true'
         env:
