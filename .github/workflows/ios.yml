@@ -276,8 +276,12 @@ jobs:
           add_bool UIFileSharingEnabled true
           add_bool UIViewControllerBasedStatusBarAppearance true
           add_bool LSRequiresIPhoneOS true
+          # build 号：用 git 提交数保证 TestFlight 单调递增（GENERATE=YES 下 CURRENT_PROJECT_VERSION
+          # 命令行覆盖不生效，故直接写进 plist）。每次上传都从新提交触发，提交数递增即 build 号递增。
+          BN=$(git -C "${GITHUB_WORKSPACE:-..}" rev-list --count HEAD 2>/dev/null || echo 1)
+          $PB -c "Set :CFBundleVersion $BN" "$APP/Info.plist" 2>/dev/null || $PB -c "Add :CFBundleVersion string $BN" "$APP/Info.plist"
           echo "=== 注入后产物 Info.plist 关键键 ==="
-          plutil -p "$APP/Info.plist" 2>/dev/null | grep -E "UISupportedInterfaceOrientations|UILaunchScreen|NSBluetoothAlwaysUsageDescription|CFBundleDisplayName|UIUserInterfaceStyle|NSAppTransportSecurity"
+          plutil -p "$APP/Info.plist" 2>/dev/null | grep -E "UISupportedInterfaceOrientations|UILaunchScreen|NSBluetoothAlwaysUsageDescription|CFBundleDisplayName|UIUserInterfaceStyle|NSAppTransportSecurity|CFBundleVersion"
 
       - name: 诊断构建产物（app bundle 里真正的 Info.plist / 图标）
         if: steps.sig.outputs.ready == 'true'
