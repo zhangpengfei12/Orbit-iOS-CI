@@ -276,9 +276,10 @@ jobs:
           add_bool UIFileSharingEnabled true
           add_bool UIViewControllerBasedStatusBarAppearance true
           add_bool LSRequiresIPhoneOS true
-          # build 号：用 git 提交数保证 TestFlight 单调递增（GENERATE=YES 下 CURRENT_PROJECT_VERSION
-          # 命令行覆盖不生效，故直接写进 plist）。每次上传都从新提交触发，提交数递增即 build 号递增。
-          BN=$(git -C "${GITHUB_WORKSPACE:-..}" rev-list --count HEAD 2>/dev/null || echo 1)
+          # build 号：用 GitHub 自带的 GITHUB_RUN_NUMBER（仓库内每次流水线运行单调递增的整数），
+          # 天然满足 TestFlight「build 号必须高于上次」的要求，且不依赖 git 命令（runner 上 git 目录
+          # 安全策略会静默吞掉 rev-list 输出）。GENERATE=YES 下 CURRENT_PROJECT_VERSION 命令行覆盖不生效，故直接写进 plist。
+          BN="${GITHUB_RUN_NUMBER:-1}"
           $PB -c "Set :CFBundleVersion $BN" "$APP/Info.plist" 2>/dev/null || $PB -c "Add :CFBundleVersion string $BN" "$APP/Info.plist"
           echo "=== 注入后产物 Info.plist 关键键 ==="
           plutil -p "$APP/Info.plist" 2>/dev/null | grep -E "UISupportedInterfaceOrientations|UILaunchScreen|NSBluetoothAlwaysUsageDescription|CFBundleDisplayName|UIUserInterfaceStyle|NSAppTransportSecurity|CFBundleVersion"
