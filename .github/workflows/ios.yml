@@ -243,6 +243,42 @@ jobs:
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
             archive
 
+      # ⚠ 兜底：Xcode 26 + XcodeGen 实测完全忽略 INFOPLIST_FILE（GENERATE=NO/YES 都试过，产物 plist
+      #   始终是 Xcode 自动生成版，自定义键全丢、被 Apple 判 "No orientations were specified"）。
+      #   根因不在 plist 内容，而在 XcodeGen 生成的工程不吃这个文件。故 archive 之后、export 之前，
+      #   用 PlistBuddy 把必需键直接写进已构建 app 的 Info.plist（exportArchive 会重新签名，随包生效）。
+      - name: 兜底注入 Info.plist 必需键（XcodeGen 不吃 INFOPLIST_FILE 的 workaround）
+        if: steps.sig.outputs.ready == 'true'
+        run: |
+          APP="$RUNNER_TEMP/Orbit.xcarchive/Products/Applications/Orbit.app"
+          PB=/usr/libexec/PlistBuddy
+          has(){ $PB -c "Print :$1" "$APP/Info.plist" >/dev/null 2>&1; }
+          add_str(){ if ! has "$1"; then $PB -c "Add :$1 string '$2'" "$APP/Info.plist"; fi; }
+          add_bool(){ if ! has "$1"; then $PB -c "Add :$1 bool $2" "$APP/Info.plist"; fi; }
+          add_arr(){ if ! has "$1"; then
+              $PB -c "Add :$1 array" "$APP/Info.plist"
+              for v in "${@:2}"; do $PB -c "Add :$1: string $v" "$APP/Info.plist"; done
+            fi; }
+          add_dict(){ if ! has "$1"; then $PB -c "Add :$1 dict" "$APP/Info.plist"; fi; }
+
+          add_str CFBundleDisplayName "Orbit"
+          add_str UIUserInterfaceStyle "Dark"
+          add_arr UISupportedInterfaceOrientations \
+            UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown \
+            UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+          add_dict UILaunchScreen
+          add_dict NSAppTransportSecurity
+          if ! $PB -c "Print :NSAppTransportSecurity:NSAllowsLocalNetworking" "$APP/Info.plist" >/dev/null 2>&1; then
+            $PB -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$APP/Info.plist"
+          fi
+          add_str NSBluetoothAlwaysUsageDescription "用于连接并控制已配对的硬件设备"
+          add_str NSLocalNetworkUsageDescription "用于通过局域网连接设备，以及访问局域网内的媒体共享"
+          add_bool UIFileSharingEnabled true
+          add_bool UIViewControllerBasedStatusBarAppearance true
+          add_bool LSRequiresIPhoneOS true
+          echo "=== 注入后产物 Info.plist 关键键 ==="
+          plutil -p "$APP/Info.plist" 2>/dev/null | grep -E "UISupportedInterfaceOrientations|UILaunchScreen|NSBluetoothAlwaysUsageDescription|CFBundleDisplayName|UIUserInterfaceStyle|NSAppTransportSecurity"
+
       - name: 诊断构建产物（app bundle 里真正的 Info.plist / 图标）
         if: steps.sig.outputs.ready == 'true'
         run: |
