@@ -257,6 +257,23 @@ jobs:
           ls -la "$APP/AppIcon60x60@2x.png" "$APP/AppIcon76x76@2x.png" 2>/dev/null \
             | head -5 || echo "(未在同路径找到图标，正常：actool 会把 PNG 打到根目录或 Assets.car)"
           find "$APP" -name "AppIcon*" -maxdepth 2 | head -10 || true
+          echo ""
+          echo "=== 断言：产物必须含自定义键（否则 Apple 会拒）==="
+          fail=0
+          for k in UISupportedInterfaceOrientations UILaunchScreen NSBluetoothAlwaysUsageDescription CFBundleDisplayName; do
+            if ! plutil -p "$APP/Info.plist" 2>/dev/null | grep -q "$k"; then
+              echo "!! 缺失关键键: $k"; fail=1
+            else
+              echo "  ok: $k"
+            fi
+          done
+          # 版本号必须来自 build 设置（1.0.0 + 真实 build 号），不能是 Xcode 默认 1.0/1
+          VER=$(plutil -p "$APP/Info.plist" 2>/dev/null | grep CFBundleShortVersionString | sed -E 's/.*=> "([^"]*)".*/\1/')
+          BND=$(plutil -p "$APP/Info.plist" 2>/dev/null | grep CFBundleVersion | sed -E 's/.*=> "([^"]*)".*/\1/')
+          echo "CFBundleShortVersionString=$VER  CFBundleVersion=$BND"
+          if [ "$VER" != "1.0.0" ]; then echo "!! 版本号异常（期望 1.0.0，实际 $VER）"; fail=1; fi
+          if [ "$fail" = "1" ]; then echo "产物 Info.plist 校验失败，终止。"; exit 1; fi
+          echo "产物 Info.plist 校验通过。"
 
       - name: 生成 ExportOptions
         if: steps.sig.outputs.ready == 'true'
