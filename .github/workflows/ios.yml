@@ -278,6 +278,8 @@ jobs:
           add_bool UIFileSharingEnabled true
           add_bool UIViewControllerBasedStatusBarAppearance true
           add_bool LSRequiresIPhoneOS true
+          # 出口合规：只用 Apple 内置/标准算法（HTTPS、CryptoKit），声明豁免后 TestFlight 不再逐包弹「App 加密文稿」问框
+          add_bool ITSAppUsesNonExemptEncryption false
           # build 号：用 GitHub 自带的 GITHUB_RUN_NUMBER（仓库内每次流水线运行单调递增的整数），
           # 天然满足 TestFlight「build 号必须高于上次」的要求，且不依赖 git 命令（runner 上 git 目录
           # 安全策略会静默吞掉 rev-list 输出）。GENERATE=YES 下 CURRENT_PROJECT_VERSION 命令行覆盖不生效，故直接写进 plist。
