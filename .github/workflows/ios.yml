@@ -229,9 +229,11 @@ jobs:
           PROFILE_NAME: ${{ secrets.IOS_PROFILE_NAME }}
         run: |
           cd ios
-          # build 号自增（TestFlight 只要求单调递增）：用 git 提交数，
-          # 经构建设置 CURRENT_PROJECT_VERSION 注入 Info.plist 的 $(CURRENT_PROJECT_VERSION)。
-          BUILD_NUM=$(git -C .. rev-list --count HEAD)
+          # build 号自增（TestFlight 只要求单调递增）：用 GitHub 自带的 GITHUB_RUN_NUMBER
+          # （仓库内每次流水线运行单调递增整数，零 git 依赖，避开 runner 上 rev-list 被安全策略吞掉）。
+          # ⚠ 必须在 archive 阶段就把 CURRENT_PROJECT_VERSION 设对：exportArchive 重新签名时会按工程
+          #   构建设置重新生成 plist，若 archive 阶段 build 号错（如浅克隆 rev-list 恒为 1），export 后会还原成 1。
+          BUILD_NUM="${GITHUB_RUN_NUMBER:-1}"
           echo "CURRENT_PROJECT_VERSION=$BUILD_NUM"
           xcodebuild -project Orbit.xcodeproj -scheme Orbit -configuration Release \
             -destination generic/platform=iOS \
@@ -350,6 +352,21 @@ jobs:
             -archivePath "$RUNNER_TEMP/Orbit.xcarchive" \
             -exportPath "$RUNNER_TEMP/ipa" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: 诊断导出 IPA 的 Info.plist（确认 export 未把 build 号/自定义键还原）
+        if: steps.sig.outputs.ready == 'true'
+        run: |
+          IPA="$RUNNER_TEMP/ipa/Orbit.ipa"
+          if [ ! -f "$IPA" ]; then echo "!! IPA 不存在"; exit 1; fi
+          rm -rf "$RUNNER_TEMP/ipa_check"; mkdir -p "$RUNNER_TEMP/ipa_check"
+          unzip -o -q "$IPA" -d "$RUNNER_TEMP/ipa_check"
+          APP_IN=$(find "$RUNNER_TEMP/ipa_check" -name Orbit.app -type d | head -1)
+          echo "=== 导出 IPA 内 Info.plist 关键键 ==="
+          plutil -p "$APP_IN/Info.plist" 2>/dev/null | grep -E "UISupportedInterfaceOrientations|UILaunchScreen|CFBundleDisplayName|CFBundleVersion|CFBundleShortVersionString"
+          BND=$(plutil -p "$APP_IN/Info.plist" 2>/dev/null | grep CFBundleVersion | sed -E 's/.*=> "([^"]*)".*/\1/')
+          echo "IPA CFBundleVersion=$BND"
+          if [ "$BND" != "${GITHUB_RUN_NUMBER:-1}" ]; then echo "!! IPA build 号与期望不符（export 可能还原了）"; exit 1; fi
+          echo "IPA Info.plist 校验通过。"
 
       # 只上传，不提交 App Store 审核 —— 我们的诉求就是只上 TestFlight
       # 注意：apple-actions/upload-testflight-build 的输入名是 issuer-id（不是 api-issuer-id），
