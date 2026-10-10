@@ -115,6 +115,13 @@ final class OrbitServer {
         guard let root = webRootPath else { return .internalServerError }
 
         var rel = relative
+        // ⚠ 页面错乱根因（build 29 真机实锤）：Swifter 的 request.path 带查询串，
+        //   而 HTML 里资源引用都带缓存戳（如 /css/home.css?v=20261001r），
+        //   不剥掉的话文件查找恒 404 → CSS/JS 全挂、页面无样式（背景图能显示
+        //   是因为 img src 恰好不带 ?v=）。安卓端 WebServer.kt 按 URI path/query
+        //   分离处理所以无此问题，iOS 端必须在这里对齐。
+        if let q = rel.firstIndex(of: "?") { rel = String(rel[..<q]) }
+        if let h = rel.firstIndex(of: "#") { rel = String(rel[..<h]) }
         if rel.hasPrefix("/") { rel.removeFirst() }
         if rel.isEmpty { rel = "home.html" }
         // 目录穿越防护：任何 .. 片段直接拒掉
