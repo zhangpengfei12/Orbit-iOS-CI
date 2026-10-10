@@ -132,7 +132,7 @@ extension RootViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         Diagnostics.shared.log("WEB", "❌ 主文档加载失败: \(error)")
         let ns = error as NSError
-        guard ns.domain == WebKitErrorDomain || ns.domain == NSURLErrorDomain else { return }
+        guard ns.domain == "WebKitErrorDomain" || ns.domain == WKErrorDomain || ns.domain == NSURLErrorDomain else { return }
         provisionalRetries += 1
         if provisionalRetries <= 2 {
             Diagnostics.shared.log("WEB", "自动重试第 \(provisionalRetries) 次（0.5s 后）")
