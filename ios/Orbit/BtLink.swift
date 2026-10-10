@@ -210,7 +210,7 @@ final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         for s in services { peripheral.discoverCharacteristics(nil, for: s) }
     }
 
-    func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor characteristic: CBCharacteristic, error: Error?) {
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         if let error { Diagnostics.shared.log("BT", "特征发现出错：\(error.localizedDescription)") }
         charsPending -= 1
         guard charsPending <= 0, !finalizedConnection else { return }
@@ -323,7 +323,7 @@ final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         guard let p = target, let ch = writeChar else { return }
         while !writeQueue.isEmpty && p.canSendWriteWithoutResponse {
             let d = writeQueue.removeFirst()
-            p.write(d, for: ch, type: .withoutResponse)
+            p.writeValue(d, for: ch, type: .withoutResponse)
         }
     }
 
