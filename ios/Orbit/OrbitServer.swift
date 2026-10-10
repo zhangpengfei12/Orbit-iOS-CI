@@ -71,7 +71,9 @@ final class OrbitServer {
         ApiRouter.register(into: server)
 
         do {
-            try server.start(OrbitServer.port, forceIPv4: true)
+            // priority 必须显式给 .userInitiated：Swifter 默认 .background，
+            // iOS 对 background QoS 线程限流严格，会拖慢所有请求
+            try server.start(OrbitServer.port, forceIPv4: true, priority: .userInitiated)
             listenPort = Int(OrbitServer.port)
             Diagnostics.shared.log("SERVER", "已启动 http://127.0.0.1:\(OrbitServer.port)")
         } catch {
@@ -126,19 +128,18 @@ final class OrbitServer {
         }
         let mime = (full as NSString).pathExtension.mimeType()
         Diagnostics.shared.logRequest(method: "GET", path: "/" + rel, status: 200)
-        // ⚠ build 26 黑屏教训（真机诊断实锤）：Swifter 对 .raw 响应（length=-1）既不写
-        //   Content-Length 也不声明 Connection: close，写完 body 直接关 socket —— HTTP/1.1
-        //   下这是「无长度界定」的响应，WebKit 网络栈无法确定 body 结束边界，didFinish
-        //   一直不触发 → WebView 永远停在黑底空页。这里必须手动补 Content-Length +
-        //   Connection: close，让客户端明确知道响应边界（404 无 body 靠 EOF 能收尾，
-        //   所以 build 23 反而有「加载完成」日志 —— 这就是两次黑屏表现的差异来源）。
-        return .raw(200, "OK", [
-            "Content-Type": mime,
-            "Content-Length": "\(data.count)",
-            "Connection": "close",
-            "Cache-Control": "no-cache"
-        ]) { writer in
-            try writer.write(data)
-        }
+        // ⚠ 黑屏迭代史（真机诊断实证，别回退）：
+        //   build 23: 404 空体 → didFinish ✓（但没内容，黑屏）
+        //   build 26: .raw 200 无 Content-Length → WebKit 等不到 body 边界，挂起 ✗
+        //   build 27: .raw + 手写 Content-Length + "Connection: close" → 响应完立即断开，
+        //             命中 WebKit 网络栈连接池/预连接竞态，主文档 102「帧框加载已中断」✗
+        //   根因：.raw 在 Swifter 里 content().length 恒为 -1，respond() 永远走
+        //   keep-alive 分支不成立 → 必然响应完关连接。唯一出路是 length >= 0 的
+        //   响应构造：.ok(.data(...)) 会自动写 Content-Length + Connection: keep-alive
+        //   并保持连接打开 —— 与主流服务器一致，WebKit 千锤百炼的路径。
+        //   代价：带不上 Cache-Control: no-cache（.ok(.data) 不支持附加头）。
+        //   主文档已用 reloadIgnoringLocalAndRemoteCacheData 兜底；子资源升级后若
+        //   出现「旧 JS」问题再回头解决（对比黑屏是次要问题）。
+        return .ok(.data(data, contentType: mime))
     }
 }

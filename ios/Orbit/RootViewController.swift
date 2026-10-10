@@ -10,6 +10,9 @@ import WebKit
 ///   改用其它通道那两处补丁会全部失效。
 final class RootViewController: UIViewController {
 
+    /// 主文档临时加载失败自动重试计数（成功后归零）
+    private var provisionalRetries = 0
+
     private lazy var webView: WKWebView = {
         let content = WKUserContentController()
         content.add(BridgeProxy.shared, name: "Orbit")
@@ -105,15 +108,44 @@ extension RootViewController: WKNavigationDelegate {
         Diagnostics.shared.log("WEB", "开始请求 \(webView.url?.absoluteString ?? "-")")
     }
 
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        Diagnostics.shared.log("WEB", "策略-请求: \(navigationAction.request.url?.absoluteString ?? "-") type=\(navigationAction.navigationType.rawValue)")
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        // canShowMIMEType=false 意味着 WebKit 要把响应转成下载 —— 那正是
+        // 主文档 102「帧框加载已中断」的经典来源，这里必须记录下来
+        let r = navigationResponse.response
+        Diagnostics.shared.log("WEB", "策略-响应: \(r.url?.absoluteString ?? "-") status=\((r as? HTTPURLResponse)?.statusCode ?? -1) mime=\(r.mimeType ?? "-") 可渲染=\(navigationResponse.canShowMIMEType)")
+        decisionHandler(.allow)
+    }
+
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         Diagnostics.shared.log("WEB", "已收到响应开始渲染")
     }
 
+    /// 临时加载失败自动重试（最多 2 次）。WebKit 的连接池/预连接竞态
+    /// （服务器响应完断开 → 复用到已关闭 socket）是偶发的，重试即可自愈。
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         Diagnostics.shared.log("WEB", "❌ 主文档加载失败: \(error)")
+        let ns = error as NSError
+        guard ns.domain == WebKitErrorDomain || ns.domain == NSURLErrorDomain else { return }
+        provisionalRetries += 1
+        if provisionalRetries <= 2 {
+            Diagnostics.shared.log("WEB", "自动重试第 \(provisionalRetries) 次（0.5s 后）")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.loadHome()
+            }
+        } else {
+            Diagnostics.shared.log("WEB", "已重试 \(provisionalRetries - 1) 次仍失败，放弃自动重试")
+        }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        provisionalRetries = 0
         Diagnostics.shared.log("WEB", "页面加载完成 \(webView.url?.absoluteString ?? "-")")
         // dump 页面实况：纯黑屏时靠它区分「没渲染」还是「渲染了但内容空」
         webView.evaluateJavaScript("""
