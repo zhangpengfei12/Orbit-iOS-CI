@@ -5964,6 +5964,19 @@ function bgRefresh() {
         state.className = 'bg-card-state';
         return;
     }
+    // iOS 没有「电池优化白名单 / 前台服务 / 唤醒锁」这套机制，后台由系统统一调度。
+    // 直接复用安卓那几行会全显示成 '--'，看起来像故障 —— 这里给 iOS 专属文案。
+    if (s.platform === 'ios') {
+        state.textContent = 'iOS 后台由系统管理';
+        state.className = 'bg-card-state ok';
+        ['bgBattery', 'bgService', 'bgLocks', 'bgStay', 'bgDrive', 'bgLastSent'].forEach(function (id) {
+            bgSetVal(id, '--');
+        });
+        if (desc) desc.textContent = 'iOS 由系统统一调度后台：应用到后台会被挂起，'
+            + '建议随播时保持 Orbit 在前台（或开启音频后台模式）。';
+        if (btn) btn.style.display = 'none';
+        return;
+    }
     bgSetVal('bgBattery', s.ignoringBattery ? '已允许' : '未允许', s.ignoringBattery ? 'good' : 'bad');
     bgSetVal('bgService', s.serviceRunning ? '运行中' : '未运行', s.serviceRunning ? 'good' : '');
     bgSetVal('bgLocks', s.locksHeld ? '已持有' : '未持有', s.locksHeld ? 'good' : '');

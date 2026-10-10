@@ -70,5 +70,6 @@ enum ApiRouter {
         ApiSmb.register(into: server)   // SMB 真实实现，覆盖 ApiStubs 里的占位同名路径
         ApiDeovr.register(into: server) // DeoVR TCP 真实实现，覆盖 ApiStubs 里的占位同名路径
         ApiOsr.register(into: server)   // 设备链路真实实现，覆盖上面的占位同名路径
+        ApiMedia.register(into: server) // 本机媒体浏览（沙盒 Media 目录），覆盖 ApiStubs 的空列表占位
     }
 }

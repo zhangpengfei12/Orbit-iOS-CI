@@ -167,6 +167,36 @@ enum NativeBridge {
             openAppSettings()
         case "openAppSettings":
             openAppSettings()
+
+        // MARK: 视频选择 —— iOS 没有安卓那套 SAF 文件夹授权，
+        //   系统不允许 App 遍历外部存储，只能把选来的视频拷进沙盒再播。
+        //   入口统一走 MediaPicker（相册 / 文件双通道），导入结果由 MediaStore 落地。
+        case "pickFolder":
+            // 「添加视频到媒体库」：可多选，视频与 .funscript 一起导入
+            MediaPicker.shared.presentFromTop(multiple: true) { urls in
+                guard !urls.isEmpty else { return }     // 用户取消：不回抛，前端右侧提示保持原样
+                let imported = MediaStore.shared.importFiles(urls)
+                // 回给前端的是「媒体根目录」——后续 __onFolderPicked 会 saveLocalRoot →
+                // browsePath → /api/refresh，整条选片后自动加载的流程原样复用。
+                JsEmit.js(buildCallback("__onFolderPicked", [.string(MediaStore.rootRel)]))
+                Diagnostics.shared.log("PICK", "添加视频：选中 \(urls.count) 个，导入 \(imported.count) 个")
+            }
+        case "pickVideo", "pickVideoManualRec":
+            MediaPicker.shared.presentFromTop(multiple: false) { urls in
+                guard !urls.isEmpty else { return }
+                let imported = MediaStore.shared.importFiles(urls)
+                guard let first = imported.first else { return }
+                JsEmit.js(buildCallback("__onPickVideo", [
+                    .string(first.rel), .string(first.name), .int(Int(first.size)), .bool(false)
+                ]))
+                JsEmit.js(buildCallback("__onFolderPicked", [.string(MediaStore.rootRel)]))
+            }
+        case "grantRecordFolder":
+            // iOS 没有「给某个目录写权限」这一步：App 沙盒本来就可写。
+            // 直接回授脚本输出目录（= 媒体根），contains=true 表示能承接所选视频。
+            MediaStore.shared.ensureRoot()
+            JsEmit.js(buildCallback("__onGrantFolder", [.string(MediaStore.rootRel), .bool(true), .bool(true)]))
+
         default:
             Diagnostics.shared.log("JS", "桥方法未实现: orbit.\(call.method)（\(a.count) 参）")
         }

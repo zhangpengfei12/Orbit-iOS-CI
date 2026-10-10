@@ -28,10 +28,7 @@ enum ApiSystem {
         }
 
         // POST /api/refresh —— 刷新媒体库
-        server.post["/api/refresh"] = { _ in
-            Diagnostics.shared.log("REFRESH", "请求刷新媒体库")
-            return json(["ok": true, "scanned": 0])
-        }
+        // 注：/api/refresh 的真实实现在 ApiMedia（回报已导入视频数），此处不注册占位。
 
         // GET /api/license/machine —— 取本机机器码（诊断/激活页用）
         server.get["/api/license/machine"] = { _ in

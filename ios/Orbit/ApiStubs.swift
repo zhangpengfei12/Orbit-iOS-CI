@@ -23,7 +23,8 @@ enum ApiStubs {
         server.get["/api/items/:id"] = { _ in json(["ok": true, "item": [:]] as [String: Any]) }
         server.get["/api/actors"] = { _ in json(["ok": true, "actors": [] as [Any]]) }
         server.get["/api/actors/:name"] = { _ in json(["ok": true, "actor": [:]] as [String: Any]) }
-        server.get["/api/browse/local"] = { _ in json(["ok": true, "items": [] as [Any]]) }
+        // 注：/api/browse/local 的真实实现在 ApiMedia（浏览 App 沙盒媒体目录），
+        //     这里不再注册占位，避免同名路径双重注册。
         server.get["/api/browse/smb"] = { _ in notImplemented("SMB 浏览（iOS M1 接入 AMSMB2）") }
 
         // ── 分析任务类（iOS 暂无本地扫描管线） ──

@@ -169,6 +169,12 @@ func bridgeInjectionScript() -> String {
         if (kind === 'orbit') {
           target.hasBluetoothPermission = function(){ return true; };
           target.isDebug = function(){ return false; };
+          // iOS 没有「电池优化白名单 / 前台服务 / 唤醒锁」这套东西，后台由系统统一调度。
+          // 必须预定义成同步返回字符串：Proxy 的兜底分支是「任何属性都返回函数，调用返回
+          // undefined」，前端 JSON.parse(undefined) 会抛错，后台卡片就直接显示「读取失败」。
+          target.backgroundStatus = function(){
+            return JSON.stringify({platform:'ios', supported:false});
+          };
         }
         return new Proxy(target, {
           get: function(t, prop){

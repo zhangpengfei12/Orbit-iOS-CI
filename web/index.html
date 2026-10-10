@@ -81,7 +81,7 @@
                  文案精简 + 字号 clamp，保证窄屏也不会把按钮挤到第二行（曾因 3 列布局导致 SMB 按钮换行被遮挡、点不到）。 -->
             <div class="lib-actions">
                 <button class="lib-btn" type="button" id="libBtnConnect">连设备</button>
-                <button class="lib-btn lib-btn--primary" type="button" id="libBtnFolder">打开文件夹</button>
+                <button class="lib-btn lib-btn--primary" type="button" id="libBtnFolder">选择视频</button>
                 <button class="lib-btn" type="button" id="libBtnSmb" title="SMB 网络共享">SMB</button>
                 <button class="lib-btn" type="button" id="libBtnAxis">轴设置</button>
             </div>
@@ -431,22 +431,23 @@
                         <h2 class="panel-title">媒体库</h2>
                     </div>
 
-                    <!-- 本机视频目录：安卓端通过系统文件夹选择器（SAF）授权 -->
+                    <!-- 本机视频目录（iOS）：没有安卓的 SAF 文件夹授权，
+                         App 只能读自己沙盒，故改为「相册 / 文件」选择器把视频导入 App 后再播 -->
                     <div class="settings-section">
-                        <h3>本机视频目录</h3>
-                        <p class="panel-desc">选择手机中存放视频的文件夹。点「选择文件夹」会唤起系统文件夹选择器，授权后本应用即可读取其中的视频与同名 <code>.funscript</code> 脚本。</p>
+                        <h3>本机视频</h3>
+                        <p class="panel-desc">iOS 不支持直接浏览系统文件夹。点「选择视频」从相册或「文件」里选取，视频会导入本应用媒体库再播放（<code>mp4 / mov</code> 可直接播，<code>mkv / avi</code> 需先转码）。同名 <code>.funscript</code> 脚本可一并导入。</p>
                         <div class="form-group">
                             <label class="form-label">当前目录</label>
                             <div class="form-input form-input-readonly" id="localRootDisplay" data-root-path="">读取中...</div>
                         </div>
                         <div class="scan-action-buttons">
-                            <button class="tool-btn media-scan-all" id="btnPickLocalFolder" type="button">选择文件夹</button>
+                            <button class="tool-btn media-scan-all" id="btnPickLocalFolder" type="button">选择视频（相册 / 文件）</button>
                             <span class="save-hint" id="localRootHint"></span>
                         </div>
                         <div class="form-group" style="margin-top:14px">
-                            <label class="form-label">或手动输入绝对路径</label>
+                            <label class="form-label">或手动输入媒体库路径</label>
                             <div class="input-with-btn">
-                                <input class="form-input" id="localRootManual" placeholder="例如 /storage/emulated/0/Movies">
+                                <input class="form-input" id="localRootManual" placeholder="留空则默认为 App 媒体库 Media">
                                 <button class="tool-btn" id="btnSaveLocalRoot" type="button">保存</button>
                             </div>
                         </div>
