@@ -37,7 +37,12 @@ struct SmbEntry {
 
 /// SMB 失败：既给一句能看懂的中文，也给一份可复制的 debug 明细。
 /// 前端（app.js openSmbQuickBrowse）在 d.error 存在且有 d.debug 时会渲染调试块与复制按钮。
-struct SmbFailure {
+///
+/// ⚠ 必须显式声明 Error：本类型用作 `Result<_, SmbFailure>` 的 Failure 槽位，
+///   而 Result 的 Failure 有 `Failure: Error` 约束。漏了这层会让每个返回 Result 的
+///   方法都报 "does not conform to protocol 'Error'"，且错误会级联到调用点
+///   （表现为完全无关的 "Duration 不能 + Int" 之类怪错，别被误导）。
+struct SmbFailure: Error {
     var message: String
     var debug: [String: Any]
 }

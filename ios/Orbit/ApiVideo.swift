@@ -65,7 +65,10 @@ enum ApiVideo {
         }
 
         let (start, end) = rangeFor(req.headers["range"] ?? req.headers["Range"], total: total)
-        let count = end - start + 1
+        // 显式标注 Int64：不标注时整条表达式的类型要靠 rangeFor 的返回类型推导，
+        // 一旦上游（过去 SmbFailure 未声明 Error）类型出错，这里会被推导成完全无关的
+        // 类型并报「Duration 不能与 Int 相加」这类看不懂的错，排查成本极高。
+        let count: Int64 = end - start + 1
         switch SmbClient.read(creds, path: path, start: start, count: count) {
         case .success(let data):
             return partialResponse(data: data, start: start, total: total, key: path)
