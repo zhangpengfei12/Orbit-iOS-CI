@@ -38,5 +38,6 @@ enum ApiRouter {
         ApiSystem.register(into: server)
         ApiSettings.register(into: server)
         ApiStubs.register(into: server)
+        ApiOsr.register(into: server)   // 设备链路真实实现，覆盖上面的占位同名路径
     }
 }

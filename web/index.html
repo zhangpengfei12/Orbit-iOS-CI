@@ -504,7 +504,7 @@
                         <h2 class="panel-title">OSR 设备</h2>
                     </div>
                     <div class="settings-section">
-                        <p class="panel-desc">连接 OSR 运动设备（USB 串口 / 蓝牙串口 / 网络），连接成功后即可直接驱动设备。</p>
+                        <p class="panel-desc">连接 OSR 运动设备（蓝牙 / WiFi 网络），连接成功后即可直接驱动设备。</p>
                         <div class="form-group">
                             <label class="form-label">连接方式</label>
                             <div class="conn-methods" id="connMethods">
@@ -517,11 +517,6 @@
                                     <span class="cm-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.2 7.9a14.4 14.4 0 0 1 19.6 0"/><path d="M5.4 11.7a9.7 9.7 0 0 1 13.2 0"/><path d="M8.7 15.4a5 5 0 0 1 6.6 0"/><circle cx="12" cy="18.7" r="1.25" fill="currentColor" stroke="none"/></svg></span>
                                     <span class="cm-name">WiFi</span>
                                     <span class="cm-desc">IP + 端口</span>
-                                </button>
-                                <button type="button" class="conn-method" data-method="usb">
-                                    <span class="cm-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.2v14.3"/><path d="M9.3 6.7 12 4l2.7 2.7"/><path d="M12 13.1 7.6 10.1V8.2"/><rect x="6.3" y="5.6" width="2.6" height="2.6" rx=".6" fill="currentColor" stroke="none"/><path d="M12 16.6l4.4-3v-2.3"/><path d="M16.4 9.2l1.55 2.1h-3.1z" fill="currentColor" stroke="none"/><circle cx="12" cy="19.7" r="1.5" fill="currentColor" stroke="none"/></svg></span>
-                                    <span class="cm-name">USB</span>
-                                    <span class="cm-desc">直连串口设备</span>
                                 </button>
                             </div>
                         </div>
@@ -565,19 +560,7 @@
                             </div>
                         </div>
 
-                        <!-- USB：检测并直连串口设备 -->
-                        <div class="conn-sub" id="connUsb" style="display:none">
-                            <div class="scan-action-buttons" style="margin-bottom:10px">
-                                <button type="button" class="tool-btn" id="usbScan">检测 USB 设备</button>
-                            </div>
-                            <div class="device-list" id="usbDeviceList"></div>
-                            <div class="conn-note" id="usbNote">选中设备后自动保存；无需手填 VID:PID。</div>
-                            <input type="hidden" id="osrSerialDevice">
-                            <div class="form-group" style="margin-top:8px">
-                                <label class="form-label">波特率</label>
-                                <input class="form-input" id="osrBaud" inputmode="numeric" placeholder="115200">
-                            </div>
-                        </div>
+                        <!-- iOS 版已移除 USB 数据线连接方式（仅保留蓝牙 / WiFi） -->
                         <!-- 后台运行（2026-09-19 第十一轮）
                              切后台/锁屏后设备继续跑靠三层：① 原生播放时钟自驱 ② 前台服务 + 唤醒锁
                              ③ 页面拿到原生前后台信号。其中第 ② 层还需要用户在系统里放行一次
@@ -1087,7 +1070,7 @@
                             <ol class="hm-help-list">
                                 <li>首次进入会提示<strong>试用 15 天</strong>：点「开始试用」才开始计时，到期后仍可进首页，点具体功能才弹激活面板；面板里可直接复制机器码、查看客服微信号与客服二维码。</li>
                                 <li>在「设置 → 媒体库」添加本机或 SMB 网络共享的视频目录，等待扫描完成。</li>
-                                <li>在「设置 → 设备」选择连接方式（USB 串口 / 蓝牙串口 / WiFi-UDP），保存后点「连接测试」确认设备可达。</li>
+                                <li>在「设置 → 设备」选择连接方式（蓝牙 / WiFi-UDP），保存后点「连接测试」确认设备可达。</li>
                                 <li>在「设置 → OSR 轴设置」按你的设备校正各轴方向与行程范围。</li>
                                 <li>返回首页点「视频库」进入媒体库，打开影片即可播放；同目录同名的 <code>.funscript</code> 会自动加载并跟随。</li>
                             </ol>
@@ -1097,8 +1080,7 @@
                             <div class="hm-help-h">三、连接 OSR 设备</div>
                             <p class="hm-help-p">在「设置 → 设备」中选择一种连接方式：</p>
                             <ul class="hm-help-list">
-                                <li><strong>USB 串口</strong>：手机经 OTG 直连设备，点「检测 USB 设备」并选择串口（同时兼容 USB 驱动板与 CDC-ACM 设备）。</li>
-                                <li><strong>蓝牙串口</strong>：点「蓝牙扫描」配对 SPP/GATT 设备，选中后连接；蓝牙需先配对再选择。</li>
+                                <li><strong>蓝牙</strong>：点「蓝牙」进入设备页扫描，选中设备直接连接（BLE 串口）。</li>
                                 <li><strong>WiFi（UDP）</strong>：填入设备 IP 与端口（默认 <code>192.168.1.88:8000</code>），适合局域网或广播场景。</li>
                             </ul>
                             <p class="hm-help-p">配置后务必点「连接测试」：成功表示链路可达；失败会提示原因（IP 不可达 / 端口拒绝 / 设备未开机等）。首页「设备」磁贴的副标题会实时显示链路状态：<strong>离线</strong>（硬件输出关闭）／<strong>待机</strong>（UDP 无回执）／<strong>已连接</strong>（有真实链路证据）／<strong>未连接</strong>／<strong>发送失败</strong>。</p>

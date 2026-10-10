@@ -161,6 +161,15 @@ func bridgeInjectionScript() -> String {
       if (window.Orbit) return;  // 防重复注入
       function makeBridge(kind){
         var target = {};
+        // iOS 的 messageHandlers 桥无法同步返回值；前端对这几个方法要求同步 bool。
+        // 固定语义：蓝牙权限检查恒 true（真实授权流程由原生回调 __onBluetoothPermission
+        // 驱动，iOS 首次创建 CBCentralManager 自动弹授权框），isDebug 恒 false。
+        // 不预定义的话 hasBluetoothPermission() 返回 undefined → 前端永远停在
+        // 「需要蓝牙权限」分支，扫描根本发不起来。
+        if (kind === 'orbit') {
+          target.hasBluetoothPermission = function(){ return true; };
+          target.isDebug = function(){ return false; };
+        }
         return new Proxy(target, {
           get: function(t, prop){
             if (typeof prop !== 'string') return undefined;

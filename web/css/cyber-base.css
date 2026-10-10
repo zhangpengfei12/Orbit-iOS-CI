@@ -349,10 +349,9 @@ select.form-input{
     display:block;
     filter:drop-shadow(0 0 4px rgba(var(--ic-rgb),.6));
 }
-/* 三种连接方式各自的霓虹色：蓝牙紫 / WiFi 青 / USB 品红 */
+/* 两种连接方式各自的霓虹色：蓝牙紫 / WiFi 青（iOS 已移除 USB 数据线方式） */
 .conn-method[data-method="bt"] .cm-ico{--ic:#c6a8ff;--ic-rgb:155,92,255}
 .conn-method[data-method="wifi"] .cm-ico{--ic:#7deeff;--ic-rgb:0,229,255}
-.conn-method[data-method="usb"] .cm-ico{--ic:#ff9ae6;--ic-rgb:255,47,214}
 /* 悬停 / 选中：图标块同步点亮 */
 .conn-method:hover .cm-ico{
     transform:translateY(-1px);

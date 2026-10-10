@@ -12,20 +12,7 @@ enum ApiSettings {
         registerSimple(server, "/api/settings/analyze", "settings.analyze")
         registerSimple(server, "/api/osr/settings", "settings.osr")
         registerSimple(server, "/api/osr/axes", "settings.axes")
-
-        server.get["/api/osr/status"] = { _ in
-            json([
-                "ok": true,
-                "connected": false,
-                "connectionType": OrbitConfig.shared.string(forKeyPath: "settings.osr.connectionType", default: "TCP"),
-                "note": "iOS 设备链路（BLE/TCP）尚未联调，M2 接入"
-            ])
-        }
-
-        server.post["/api/osr/reset"] = { _ in
-            Diagnostics.shared.log("OSR", "reset（iOS 暂无需下发设备指令）")
-            return json(["ok": true])
-        }
+        // 注：osr/status、osr/reset 已移到 ApiOsr（真实设备链路实现）
     }
 
     /// 通用「GET 返回当前子字典 / POST 用请求体整体覆盖该子字典」处理器

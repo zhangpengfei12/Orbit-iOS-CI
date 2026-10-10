@@ -17,9 +17,18 @@ final class RootViewController: UIViewController {
         let content = WKUserContentController()
         content.add(BridgeProxy.shared, name: "Orbit")
         content.add(BridgeProxy.shared, name: "OrbitPlayer")
+        // ⚠ 桥注入脚本（bridgeInjectionScript）把所有 window.Orbit / OrbitPlayer / OrbitNav
+        //   调用 postMessage 到【小写 orbit】——这里必须注册小写名，否则所有桥调用
+        //   静默失败（try/catch 吞掉异常），表现就是「蓝牙扫描点不动」。
+        content.add(BridgeProxy.shared, name: "orbit")
         // JS 错误捕获：黑屏排障靠它 —— 前端任何未捕获异常 / console.error 都回传诊断日志
         let errHook = WKUserScript(source: Self.jsErrorHook, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         content.addUserScript(errHook)
+        // ⚠⚠ 桥对象注入：window.Orbit / OrbitPlayer / OrbitNav 全靠它挂上去。
+        //   之前只定义了 bridgeInjectionScript() 却从没注入 —— window.Orbit 是 undefined，
+        //   前端所有「当前环境不支持蓝牙扫描（请在 App 内使用）」提示正是源于此。
+        let bridgeHook = WKUserScript(source: bridgeInjectionScript(), injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        content.addUserScript(bridgeHook)
         let config = WKWebViewConfiguration()
         config.userContentController = content
         let view = WKWebView(frame: .zero, configuration: config)
@@ -67,6 +76,12 @@ final class RootViewController: UIViewController {
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
+        // 原生 → JS 出口：服务器端点线程（BtLink 回调等）也经这里回传前端
+        JsEmit.sink = { [weak self] js in
+            guard let self else { return }
+            if Thread.isMainThread { self.emit(js) }
+            else { DispatchQueue.main.async { self.emit(js) } }
+        }
         loadHome()
     }
 
@@ -178,7 +193,18 @@ final class BridgeProxy: NSObject, WKScriptMessageHandler {
             Diagnostics.shared.log("JS", text)
             return
         }
-        // M1 起在这里分发 39 个桥方法（见 ENDPOINTS.md 与 Android MainActivity.kt:610-1036）
+        // 桥调用：注入脚本统一 postMessage 到小写 orbit（body = {kind, method, args} JSON）
+        if message.name == "orbit" {
+            guard let body = message.body as? String,
+                  let data = body.data(using: .utf8),
+                  let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let call = JsCall.parse(obj) else {
+                Diagnostics.shared.log("JS", "桥消息解析失败: \(String(describing: message.body))")
+                return
+            }
+            NativeBridge.handle(call)
+            return
+        }
         print("[Orbit] js -> native: \(message.name) body=\(message.body)")
     }
 }

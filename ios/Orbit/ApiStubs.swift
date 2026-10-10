@@ -38,8 +38,7 @@ enum ApiStubs {
         }
         server.get["/api/deovr/status"] = { _ in json(["ok": true, "connected": false]) }
 
-        // ── OSR 设备类（BLE/TCP 驱动在 M2 联调） ──
-        server.post["/api/osr/connect-test"] = { _ in notImplemented("BLE/TCP 连接测试（M2 联调）") }
+        // ── OSR 设备类：真实实现见 ApiOsr.swift（BLE/UDP 链路）──
         server.post["/api/osr/dash-mode"] = { req in
             guard let body = parseJSON(req) else { return apiError("invalid_json") }
             Diagnostics.shared.log("DASH", "冲刺指令 on=\(body["on"] ?? false) speed=\(body["speed"] ?? 0)")

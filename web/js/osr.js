@@ -25,10 +25,7 @@
     var pollTimer = null;
     var hintTimer = null;
     var lastStatus = null;
-    var currentMethod = 'wifi';   // 'bt' | 'wifi' | 'usb'
-    var wifiProto = 'UDP';        // 仅 UDP（TCP 选项已移除，2026-09-18）
-    var usbDevices = [];
-    var lastUsbScan = null;       // 最近一次 /api/osr/usb-scan 的原始响应，用于 OTG 提示
+    var currentMethod = 'wifi';   // 'bt' | 'wifi'（iOS 版已移除 USB 数据线方式）
 
     /* ---------- 蓝牙状态 ---------- */
     var btSelected = '';          // 已选中的设备地址（保存进设置）
@@ -186,15 +183,11 @@
         if ($('osrProtocol')) $('osrProtocol').value = s.protocol || 'AUTO';
         if ($('osrIp')) $('osrIp').value = s.ip || '192.168.1.88';
         if ($('osrPort')) $('osrPort').value = s.port || 8000;
-        if ($('osrSerialDevice')) $('osrSerialDevice').value = s.serialDevice || '1a86:7523';
-        if ($('osrBaud')) $('osrBaud').value = s.baudRate || 115200;
         // 播放同步已改为全局默认开启（2026-09-18 移除「影片同步」开关），不再有对应控件
         // 蓝牙已选设备
         btSelected = s.btAddress || '';
         btKind = s.btKind || 'ble';
         btName = s.btName || '';
-        // WiFi 仅保留 UDP（TCP 选项已移除，2026-09-18）：固定为 UDP
-        wifiProto = 'UDP';
         applyMethod(methodFromConnectionType(s.connectionType));
         updateBtPickedCard();
         refreshBtStatus();
@@ -205,14 +198,10 @@
         return {
             // 硬件输出固定开启：页面已移除该开关（2026-09-17）
             enabled: true,
-            connectionType: (currentMethod === 'usb') ? 'Serial'
-                : (currentMethod === 'bt') ? 'BluetoothSerial'
-                : 'UDP',
+            connectionType: (currentMethod === 'bt') ? 'BluetoothSerial' : 'UDP',
             protocol: $('osrProtocol') ? $('osrProtocol').value : 'AUTO',
             ip: $('osrIp') ? $('osrIp').value.trim() : '192.168.1.88',
             port: parseInt($('osrPort') && $('osrPort').value, 10) || 8000,
-            serialDevice: $('osrSerialDevice') ? $('osrSerialDevice').value.trim() : '',
-            baudRate: parseInt($('osrBaud') && $('osrBaud').value, 10) || 115200,
             btAddress: btSelected,
             btKind: btKind,
             btName: btName,
@@ -268,15 +257,12 @@
 
     /* ---------- 连接方式：先选方式，再按方式输入参数 ---------- */
     function methodFromConnectionType(t) {
-        if (t === 'Serial') return 'usb';
         if (t === 'BluetoothSerial') return 'bt';
-        return 'wifi'; // UDP
+        return 'wifi'; // UDP（iOS 版仅保留蓝牙 / WiFi 两种方式）
     }
 
     function syncConnectionType() {
-        var ct = (currentMethod === 'usb') ? 'Serial'
-            : (currentMethod === 'bt') ? 'BluetoothSerial'
-            : 'UDP';
+        var ct = (currentMethod === 'bt') ? 'BluetoothSerial' : 'UDP';
         var sel = $('osrConnType');
         if (sel) sel.value = ct;
     }
@@ -289,110 +275,13 @@
         });
         if ($('connBt')) $('connBt').style.display = (method === 'bt') ? '' : 'none';
         if ($('connWifi')) $('connWifi').style.display = (method === 'wifi') ? '' : 'none';
-        if ($('connUsb')) $('connUsb').style.display = (method === 'usb') ? '' : 'none';
         syncConnectionType();
-        if (method === 'usb') loadUsbDevices();
         if (method === 'bt') updateBtPickedCard();
     }
 
     function escapeHtml(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-        });
-    }
-
-    function renderUsbList() {
-        var box = $('usbDeviceList');
-        if (!box) return;
-        if (!usbDevices.length) {
-            var tip = lastUsbScan && lastUsbScan.otgTip ?
-                '<div style="margin-top:8px;color:#ffcc80;font-size:12px">' +
-                '手机支持 OTG，但系统没有枚举到 USB 设备。' +
-                '部分机型需要在系统设置中手动打开「OTG」或「USB 连接」开关。' +
-                '</div>' +
-                '<button type="button" class="tool-btn" style="margin-top:10px" id="usbOpenOtg">去系统设置检查 OTG</button>' : '';
-            box.innerHTML = '<div class="device-empty">未检测到任何 USB 设备。请用 USB 线连接设备后点「检测 USB 设备」。' + tip + '</div>';
-            var btn = $('usbOpenOtg');
-            if (btn) btn.onclick = function () {
-                if (window.Orbit && window.Orbit.openSettings) window.Orbit.openSettings('android.settings.SETTINGS');
-                else showResult('无法调起系统设置，请手动进入设置 → 其他网络与连接 → OTG 打开开关', true, 6000);
-            };
-            return;
-        }
-        var selectedId = ($('osrSerialDevice') && $('osrSerialDevice').value.trim()) || '';
-
-        // 列表里只有一个设备且尚未选中时，自动选中并保存，避免用户只点了检测就点连接测试
-        if (usbDevices.length === 1 && !selectedId) {
-            selectedId = usbDevices[0].id;
-            if ($('osrSerialDevice')) $('osrSerialDevice').value = selectedId;
-            saveSettings(true);
-        }
-
-        var html = '';
-        usbDevices.forEach(function (d) {
-            var active = (selectedId === d.id) ? ' active' : '';
-            var badge = '';
-            if (!d.hasPermission) badge = '<span class="di-badge">未授权，点「检测 USB 设备」申请权限</span>';
-            else if (d.serial === false) badge = '<span class="di-badge">无串口驱动，可能无法通信</span>';
-            html += '<div class="device-item' + active + '" data-id="' + d.id + '">' +
-                '<span class="di-name">' + escapeHtml(d.name) + '</span>' +
-                '<span class="di-sub">VID:PID ' + escapeHtml(d.id) + '</span>' + badge + '</div>';
-        });
-        box.innerHTML = html;
-        Array.prototype.forEach.call(box.querySelectorAll('.device-item'), function (it) {
-            it.addEventListener('click', function () {
-                var id = it.getAttribute('data-id');
-                if ($('osrSerialDevice')) $('osrSerialDevice').value = id;
-                Array.prototype.forEach.call(box.querySelectorAll('.device-item'), function (x) { x.classList.remove('active'); });
-                it.classList.add('active');
-                saveSettings(true);
-                showResult('已选择 USB 设备：' + id);
-            });
-        });
-    }
-
-    function loadUsbDevices() {
-        get('/api/osr/usb-devices').then(function (r) {
-            lastUsbScan = r || null;
-            usbDevices = (r && r.devices && Array.isArray(r.devices)) ? r.devices : [];
-            renderUsbList();
-        });
-    }
-
-    /* 检测 USB 设备：请求系统权限并刷新列表（点击即申请权限）。
-       权限弹窗由系统异步弹出，用户点允许后 hasPermission 才会变 true，
-       因此扫描后延时再拉取一次以反映最新授权状态。 */
-    function scanUsbDevices() {
-        showResult('正在检测 USB 设备并申请权限…');
-        post('/api/osr/usb-scan', {}).then(function (r) {
-            lastUsbScan = r || null;
-            usbDevices = (r && r.devices && Array.isArray(r.devices)) ? r.devices : [];
-            renderUsbList();
-            if (!usbDevices.length) {
-                // 空列表归因：手机不支持主机模式 / 系统层就没枚举到设备 / 枚举出错
-                var why;
-                if (r && r.usbHost === false) {
-                    why = '此手机不支持 USB 主机（OTG）模式，无法 USB 直连串口，请改用 WiFi 或蓝牙方式连接设备。';
-                } else if (r && r.error) {
-                    why = 'USB 枚举出错：' + r.error;
-                } else if (r && r.rawCount === 0) {
-                    why = '手机在系统层没有枚举到任何 USB 设备（不是应用过滤掉了），请依次检查：' +
-                        '① 换一根确认能传数据的 USB 线——纯充电线没有数据芯线，插上系统不会有任何反应；' +
-                        '② 部分机型需要在系统设置中打开「OTG」开关，可点击下方「去系统设置检查 OTG」按钮；' +
-                        '③ 拿一个 U 盘插手机，若文件管理里也认不出，说明手机 OTG/主机模式有问题；' +
-                        '④ 确认设备已开机，且它的 USB 口是「串口/从机」模式——若该口只供电或只作主机用，手机侧永远枚举不到。';
-                } else {
-                    why = '未检测到可用的 USB 串口设备。';
-                }
-                showResult('未检测到 USB 设备。' + why, true);
-            } else {
-                showResult('检测到 ' + usbDevices.length + ' 个 USB 设备，请在系统弹窗中允许权限');
-                // 权限授予是异步的，延时刷新以反映最新授权状态
-                setTimeout(loadUsbDevices, 1500);
-                setTimeout(loadUsbDevices, 4000);
-            }
-        }).catch(function () {
-            showResult('USB 检测失败', true);
         });
     }
 
@@ -869,7 +758,7 @@
             showResult('已还原默认：60 次/分 · 80% · 8 秒 · 随机全场');
         });
 
-        // 连接方式：先选方式（蓝牙 / WiFi / USB）。选「蓝牙」→ 跳转全屏设备页
+        // 连接方式：先选方式（蓝牙 / WiFi）。选「蓝牙」→ 跳转全屏设备页
         var methodCards = document.querySelectorAll('#connMethods .conn-method');
         Array.prototype.forEach.call(methodCards, function (c) {
             c.addEventListener('click', function () {
@@ -919,9 +808,7 @@
             }
         });
 
-        if ($('usbScan')) $('usbScan').addEventListener('click', scanUsbDevices);
-
-        // ---- 原生蓝牙回调（MainActivity / BtLink → evaluateJavascript）----
+        // ---- 原生蓝牙回调（原生 BtLink → evaluateJavaScript）----
         window.__onBluetoothPermission = function (granted) {
             if (granted) {
                 setBtPermHint(false);
@@ -1037,13 +924,6 @@
         };
         window.__onBtData = function () { /* 设备回包，暂不处理 */ };
 
-        // 原生收到 USB 设备接入广播后回调：刷新列表让用户能看到新设备
-        window.__onUsbAttached = function () {
-            showResult('检测到 USB 设备插入，刷新列表…');
-            loadUsbDevices();
-            setTimeout(loadUsbDevices, 1500);
-        };
-
         if ($('osrSaveSettings')) $('osrSaveSettings').addEventListener('click', function () { saveSettings(); });
 
         if ($('osrOpenConfig')) $('osrOpenConfig').addEventListener('click', function () {
@@ -1063,9 +943,6 @@
                     var msg;
                     if (ok) {
                         msg = '连接成功：指令已送达，设备应出现明显动作';
-                    } else if ((reason || '').indexOf('未选择串口设备') >= 0 ||
-                               ($('osrSerialDevice') && !$('osrSerialDevice').value.trim())) {
-                        msg = '连接失败：请先点击上方 USB 设备列表中的设备项选中它，再点连接测试';
                     } else {
                         msg = '连接失败：' + reason;
                     }
