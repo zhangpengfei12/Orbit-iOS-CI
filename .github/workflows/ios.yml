@@ -234,13 +234,14 @@ jobs:
           echo "=== 当前 Xcode ==="; xcodebuild -version
           echo "=== 可用 Xcode ==="; ls /Applications/ | grep -i xcode || true
           echo "=== 手动签名：让 Xcode 用已放置的 App Store 分发 profile 解析设置 ==="
+          # 与归档步骤同口径：profile 名走自定义构建设置，避免命令行传播到包 target
           cd ios && xcodebuild -project Orbit.xcodeproj -scheme Orbit -configuration Release \
             -destination generic/platform=iOS \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM="$TEAM_ID" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
-            -showBuildSettings 2>&1 | grep -iE "PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN_IDENTITY|CODE_SIGN_STYLE|PROVISIONING_PROFILE|PROVISIONING_PROFILE_SPECIFIER" | head -20 || true
+            ORBIT_PROFILE_NAME="$PROFILE_NAME" \
+            -showBuildSettings 2>&1 | grep -iE "PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN_IDENTITY|CODE_SIGN_STYLE|PROVISIONING_PROFILE|ORBIT_PROFILE_NAME" | head -20 || true
 
       - name: 归档
         if: steps.sig.outputs.ready == 'true'
@@ -255,6 +256,11 @@ jobs:
           #   构建设置重新生成 plist，若 archive 阶段 build 号错（如浅克隆 rev-list 恒为 1），export 后会还原成 1。
           BUILD_NUM="${GITHUB_RUN_NUMBER:-1}"
           echo "CURRENT_PROJECT_VERSION=$BUILD_NUM"
+          # ⚠ profile 名**不能**用 PROVISIONING_PROFILE_SPECIFIER 传：xcodebuild 命令行构建设置会
+          #   传播到 SwiftPM 生成的包 project，框架类包 target（AMSMB2）不支持 profile，归档会报
+          #   "AMSMB2 does not support provisioning profiles"（本仓库 build 37 实踩）。
+          #   改为传用户自定义构建设置 ORBIT_PROFILE_NAME，由 project.yml 里 Orbit target 的
+          #   PROVISIONING_PROFILE_SPECIFIER = $(ORBIT_PROFILE_NAME) 展开取用 —— 只作用于 app。
           xcodebuild -project Orbit.xcodeproj -scheme Orbit -configuration Release \
             -destination generic/platform=iOS \
             CURRENT_PROJECT_VERSION="$BUILD_NUM" \
@@ -262,7 +268,7 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM="$TEAM_ID" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+            ORBIT_PROFILE_NAME="$PROFILE_NAME" \
             archive
 
       # ⚠ 黑屏根治：Xcode 26 对 folder reference 的归档拷贝不可靠（build 23/24 连续两版
