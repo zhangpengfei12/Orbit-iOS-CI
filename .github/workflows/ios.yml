@@ -265,19 +265,31 @@ jobs:
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
             archive
 
-      # ⚠ 黑屏回归断言：bundle 内 web/ 必须有真实文件（build 23 曾拷出空目录，真机纯黑屏）
-      - name: 校验归档产物 web/ 资源
+      # ⚠ 黑屏根治：Xcode 26 对 folder reference 的归档拷贝不可靠（build 23/24 连续两版
+      #   都产出「bundle 内 web/ 存在但为空」），故 archive 之后**主动把 web 资源塞进已构建
+      #   的 app bundle**，再 exportArchive 随包带走，彻底不依赖 Xcode 的资源拷贝阶段。
+      - name: 归档后注入 web 资源 + 校验
         if: steps.sig.outputs.ready == 'true'
         run: |
           APP="$RUNNER_TEMP/Orbit.xcarchive/Products/Applications/Orbit.app"
-          echo "=== app bundle 内 web/ 顶层 ==="
-          ls "$APP/web" 2>/dev/null || { echo "!! web/ 目录不存在"; exit 1; }
+          # 工作目录是 checkout 根；ios/WebResources/web 由「拷贝 web 资源进工程内」步骤已就绪
+          SRC="ios/WebResources/web"
+          if [ ! -f "$SRC/home.html" ]; then
+            echo "!! 源 web 目录缺失，兜底从仓库根 web/ 重新拷贝"
+            rm -rf ios/WebResources && mkdir -p ios/WebResources
+            cp -R web ios/WebResources/web
+          fi
+          # 删除 folder reference 可能留下的空 web/ 目录，确保产物 100% 来自本次拷贝
+          rm -rf "$APP/web"
+          cp -R "$SRC" "$APP/web"
+          echo "=== 注入后 app bundle 内 web/ 顶层 ==="
+          ls "$APP/web" 2>/dev/null
           N=$(find "$APP/web" -type f | wc -l | tr -d ' ')
           echo "web/ 文件总数: $N"
           for f in home.html index.html player.html js/app.js css/app.css; do
             test -f "$APP/web/$f" || { echo "!! 缺失 $f"; exit 1; }
           done
-          echo "web/ 资源校验通过 ✓"
+          echo "web/ 资源注入并校验通过 ✓"
 
       # ⚠ 兜底：Xcode 26 + XcodeGen 实测完全忽略 INFOPLIST_FILE（GENERATE=NO/YES 都试过，产物 plist
       #   始终是 Xcode 自动生成版，自定义键全丢、被 Apple 判 "No orientations were specified"）。
@@ -402,13 +414,19 @@ jobs:
           BND=$(plutil -p "$APP_IN/Info.plist" 2>/dev/null | grep CFBundleVersion | sed -E 's/.*=> "([^"]*)".*/\1/')
           echo "IPA CFBundleVersion=$BND"
           if [ "$BND" != "${GITHUB_RUN_NUMBER:-1}" ]; then echo "!! IPA build 号与期望不符（export 可能还原了）"; exit 1; fi
+          echo "=== 导出 IPA 内 web/ 资源确认（archive 后注入应随包带走）==="
+          ls "$APP_IN/web" 2>/dev/null | head
+          test -f "$APP_IN/web/home.html" || { echo "!! IPA 内 web/home.html 缺失"; exit 1; }
+          echo "IPA web 资源确认通过 ✓"
           echo "IPA Info.plist 校验通过。"
 
       # 只上传，不提交 App Store 审核 —— 我们的诉求就是只上 TestFlight
       # 注意：apple-actions/upload-testflight-build 的输入名是 issuer-id（不是 api-issuer-id），
       # 且 api-private-key 必须传原始 PEM（不是 base64），Action 会把它写到 $HOME/private_keys/ 再调 altool。
       - name: 上传 TestFlight
-        if: steps.sig.outputs.ready == 'true' && github.event_name == 'workflow_dispatch' && inputs.upload
+        # ⚠ 出包即上传：push 到 main（iOS/web 修复）自动上传 TestFlight；
+        #   也保留 workflow_dispatch 手动触发（需勾 upload）的能力。
+        if: steps.sig.outputs.ready == 'true' && (github.event_name == 'workflow_dispatch' && inputs.upload || github.event_name == 'push')
         uses: apple-actions/upload-testflight-build@v1
         with:
           app-path: ${{ runner.temp }}/ipa/Orbit.ipa
