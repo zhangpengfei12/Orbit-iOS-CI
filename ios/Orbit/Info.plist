@@ -24,6 +24,20 @@
 	<string>用于连接并控制已配对的硬件设备</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>用于通过局域网连接设备，以及访问局域网内的媒体共享</string>
+	<!-- 手控触板的「陀螺仪 / 摇一摇」模式用 CoreMotion 取姿态与线性加速度。
+	     iOS 不给这个描述串时 CMDeviceMotion 直接不返回数据（不是崩溃，是静默无数据）。 -->
+	<key>NSMotionUsageDescription</key>
+	<string>用于「手控触板」的陀螺仪与摇一摇模式，把手机姿态转成设备动作</string>
+	<!-- iOS 没有前台服务 / 唤醒锁，App 进后台几秒即被挂起。
+	     声明音频后台模式是这里唯一能合法延长运行时长的办法（随播时确实在出声）。 -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+	<!-- 本 App 只使用 HTTPS 等系统内置加密，属豁免范畴。
+	     不声明的话每次上传 TestFlight 都会被判「Missing Compliance」需要手动确认。 -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

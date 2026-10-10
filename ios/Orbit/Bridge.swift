@@ -159,7 +159,25 @@ func bridgeInjectionScript() -> String {
     return """
     (function(){
       if (window.Orbit) return;  // 防重复注入
-      function makeBridge(kind){
+
+      // ⚠⚠ iOS 移植最容易踩的坑：Proxy 的兜底是「任何属性都返回一个函数」，
+      //    于是前端 `typeof window.Orbit.xxx === 'function'` 这种存在性判断**恒为 true**。
+      //    安卓有、iOS 根本没有的能力会因此走进原生分支干等（点「立即更新」按钮永远转圈、
+      //    陀螺仪模式永远不出数据）。凡 iOS 不支持的方法必须显式返回 undefined，
+      //    让前端走它自己的兜底或降级提示。
+      var ORBIT_DEAD = {
+        downloadAndInstallApk: 1,   // iOS 不能安装 APK（更新走 TestFlight / App Store）
+        requestIgnoreBattery: 1,    // iOS 没有「电池优化白名单」这套机制
+        openVideoExternal:  1       // 沙盒视频无法交给外部播放器，也没有系统 Intent
+      };
+      // OrbitPlayer 是安卓 ExoPlayer 的代理层。iOS 没有这一层，
+      // 而 player.js 用 `typeof OrbitPlayer.load === 'function'` 判定「有原生内核」——
+      // Proxy 兜底会让判定恒为 true，播放被整段导向空实现的 nativeProxy，
+      // 结果是<video> 不加载、进度条不动、时间轴永远是 0（视频根本不播）。
+      // 故 load / loadUri / available 必须返回 undefined，逼 player.js 走网页 <video>。
+      var PLAYER_DEAD = { load: 1, loadUri: 1, available: 1 };
+
+      function makeBridge(kind, dead){
         var target = {};
         // iOS 的 messageHandlers 桥无法同步返回值；前端对这几个方法要求同步 bool。
         // 固定语义：蓝牙权限检查恒 true（真实授权流程由原生回调 __onBluetoothPermission
@@ -180,6 +198,7 @@ func bridgeInjectionScript() -> String {
           get: function(t, prop){
             if (typeof prop !== 'string') return undefined;
             if (prop in t) return t[prop];          // 前端覆盖的函数（如 handleBack）
+            if (dead && dead[prop]) return undefined;  // iOS 无此能力：让前端降级
             return function(){
               var args = Array.prototype.slice.call(arguments);
               try {
@@ -191,9 +210,9 @@ func bridgeInjectionScript() -> String {
           set: function(t, prop, val){ t[prop] = val; return true; }
         });
       }
-      window.Orbit = makeBridge('orbit');
-      window.OrbitPlayer = makeBridge('player');
-      window.OrbitNav = makeBridge('nav');
+      window.Orbit = makeBridge('orbit', ORBIT_DEAD);
+      window.OrbitPlayer = makeBridge('player', PLAYER_DEAD);
+      window.OrbitNav = makeBridge('nav', null);
     })();
     """
 }

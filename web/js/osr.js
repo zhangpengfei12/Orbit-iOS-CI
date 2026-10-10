@@ -268,7 +268,9 @@
 
     /* ---------- 连接方式：先选方式，再按方式输入参数 ---------- */
     function methodFromConnectionType(t) {
-        if (t === 'Serial') return 'usb';
+        // ⚠ iOS 版没有 USB / 串口卡片（页面里只留了 bt 与 wifi 两张），
+        //   若旧配置里存着 'Serial' 直接沿用会走到 usb 分支：两张卡片全被隐藏、
+        //   参数区一片空白，看起来像「设置页坏了」。这里统一收敛回 WiFi。
         if (t === 'BluetoothSerial') return 'bt';
         return 'wifi'; // UDP
     }

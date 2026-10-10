@@ -197,6 +197,43 @@ enum NativeBridge {
             MediaStore.shared.ensureRoot()
             JsEmit.js(buildCallback("__onGrantFolder", [.string(MediaStore.rootRel), .bool(true), .bool(true)]))
 
+        // MARK: 系统页 / 外部链接
+        // 前端 osr.js 里写的是安卓意图串（'android.settings.SETTINGS'）——
+        // iOS 没有这套 Intent，一律映射成「打开本 App 的系统设置页」。
+        case "openSettings":
+            openAppSettings()
+        case "openDeviceConfig":
+            // 设备配网页（如 192.168.4.1）用 Safari 打开：配网热点下 App 自己的
+            // WKWebView 会被 iOS 的「无线局域网是否接入互联网」提示打断。
+            openURLString("http://" + (a.first?.asString ?? "192.168.4.1"))
+        case "openWeb", "openExternal":
+            // 安卓是「应用内 WebView 打开」；iOS 应用内 WKWebView 不支持 Web Serial /
+            // Web Bluetooth，统一交给 Safari，行为和安卓跳浏览器一致。
+            openURLString(a.first?.asString ?? "")
+
+        // MARK: 姿态（触板陀螺仪 / 摇一摇）
+        // ⚠ 不能留空：桥的 Proxy 兜底会让 typeof startTilt 恒为 'function'，
+        //   前端就不再注册网页 deviceorientation 兜底；而 WKWebView 的
+        //   DeviceOrientationEvent 需要 requestPermission()（前端没调）→ 两头都没数据。
+        case "startTilt":
+            TiltSource.shared.start()
+        case "stopTilt":
+            TiltSource.shared.stop()
+
+        // MARK: 在线更新
+        // iOS 不装 APK：更新走 TestFlight / App Store。若照安卓那样去查
+        // CloudBase 上的 latest.json（那是安卓的 2.7.x），会判出「发现新版本 v2.7.52」，
+        // 用户点「立即更新」后 downloadAndInstallApk 在 iOS 上不存在 → 按钮永久转圈。
+        // 故这里直接回「已是最新」并说明真实更新渠道。
+        case "checkAppUpdate":
+            let ver = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.0.1"
+            Diagnostics.shared.log("UPDATE", "iOS 版不做 APK 在线更新，当前 \(ver)")
+            JsEmit.js(buildCallback("__onUpdateChecked", [.object([
+                "available": false,
+                "current": ver,
+                "note": "iOS 版更新经 TestFlight / App Store 分发"
+            ])]))
+
         default:
             Diagnostics.shared.log("JS", "桥方法未实现: orbit.\(call.method)（\(a.count) 参）")
         }
@@ -206,6 +243,23 @@ enum NativeBridge {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         DispatchQueue.main.async {
             UIApplication.shared.open(url)
+        }
+    }
+
+    /// 在系统 Safari 里打开 URL（配网页 / 外部站点 / 网页操作）。
+    /// 缺 scheme 时补 http://；非法 URL 只记日志，不弹东西（前端已有自己的提示）。
+    private static func openURLString(_ raw: String) {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return }
+        if !s.lowercased().hasPrefix("http") { s = "http://" + s }
+        guard let url = URL(string: s) else {
+            Diagnostics.shared.log("URL", "无法打开的链接：\(raw)")
+            return
+        }
+        DispatchQueue.main.async {
+            UIApplication.shared.open(url) { ok in
+                Diagnostics.shared.log("URL", "打开 \(s) → \(ok ? "成功" : "失败")")
+            }
         }
     }
 }

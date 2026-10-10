@@ -49,19 +49,30 @@ enum ApiStubs {
         }
         server.get["/api/vrbt/scan"] = { _ in json(["ok": true, "devices": [] as [Any]]) }
         server.get["/api/vrbt/status"] = { _ in
-            json(["ok": true, "connected": false, "role": "sink",
+            // ⚠ role 必须是**空串**而不是 "sink"：前端 vrbtRenderStatus 的 else 分支才是
+            //   「未启用」，而 "SINK" 分支会显示「未连接」——那是"功能存在但没连上"的语义，
+            //   在 iOS 上纯属误导（安卓 VrBleBridge 未启用时同样返回空 role）。
+            json(["ok": true, "connected": false, "role": "", "transport": "",
+                  "script": "", "scriptLoaded": false,
                   "implemented": false, "note": "VR 蓝牙时间桥（iOS 暂未实现）"] as [String: Any])
         }
 
         // ── AI 生成脚本（iOS 暂无视频逐帧分析管线）──
         // 后处理算法（FunscriptPost）已移植就位，缺的是「解码视频 → 运动分析」这一段。
-        // 前端 player.js 在无脚本视频上会自动 POST start，404 会让它误判成生成失败并反复重试。
+        // ⚠ 绝不能返回 ok:true + running:false：player.js 的 startAutoGenerate 一旦拿到
+        //   ok:true 就 enterRunning() → pollGenStatus()，而 status 的 running=false 且
+        //   phase 不是 'done' 会直接判成「生成脚本失败（未知原因）」，胶囊上挂着一句假失败。
+        //   正确做法是 start 明确失败（ok:false + error），让前端走 fail 文案而不是假进度。
+        //   （正常路径根本不会到这里：funscript-auto 已返回 canGenerate=false。）
         // ⚠ status 是 POST（前端用 postJson 带 {full:1}），不是 GET。
-        for m in ["/api/osr/funscript-gen/start", "/api/osr/funscript-gen/cancel",
-                  "/api/osr/funscript-gen/status"] {
+        server.post["/api/osr/funscript-gen/start"] = { _ in
+            json(["ok": false, "error": "ios_unsupported", "running": false,
+                  "note": "iOS 暂无视频逐帧分析管线，无法生成脚本"] as [String: Any])
+        }
+        for m in ["/api/osr/funscript-gen/cancel", "/api/osr/funscript-gen/status"] {
             server.post[m] = { _ in
-                json(["ok": true, "running": false, "implemented": false,
-                      "note": "AI 生成脚本（iOS 暂无视频逐帧分析管线）"] as [String: Any])
+                json(["ok": false, "error": "ios_unsupported", "running": false,
+                      "note": "iOS 暂无视频逐帧分析管线，无法生成脚本"] as [String: Any])
             }
         }
 

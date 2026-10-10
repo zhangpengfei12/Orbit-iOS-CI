@@ -41,7 +41,8 @@ enum ApiMedia {
 
         // POST /api/refresh：覆盖 ApiSystem 的恒 0 占位，回报真实已导入数
         server.post["/api/refresh"] = { _ in
-            let n = MediaStore.shared.importedCount
+            // 顺带重建媒体索引：首页走 /api/items，导入完不刷新的话新视频不会进首页
+            let n = MediaIndex.shared.rescan()
             Diagnostics.shared.log("REFRESH", "请求刷新媒体库（本机 \(n) 个视频）")
             return json(["ok": true, "scanned": n])
         }

@@ -85,6 +85,9 @@ var browserType = (function() {
     if (/PicoBrowser|\bPICO\b|\bPico\b|PICO\s*4|Pico\s*4/i.test(ua)) return 'pico';
     if (/OculusBrowser|Quest/i.test(ua)) return 'oculus';
     if (/Wolvic/i.test(ua)) return 'wolvic';
+    // ⚠ iPad 必须先判：iPadOS 13+ 的 UA 伪装成 "Macintosh"（既无 iPad 也无 Mobile 字样），
+    //   漏了这条 iPad 会被判成 desktop，分页条数与触摸向样式全部按桌面来。
+    if (/iPad|iPhone|iPod/i.test(ua)) return 'mobile';
     if (/Android|Mobile/i.test(ua)) return 'mobile';
     if (/Edg|Chrome|CriOS|Firefox|FxiOS|Safari|Windows NT|Macintosh|Linux x86_64/i.test(ua)) return 'desktop';
     return 'deovr';
@@ -5858,7 +5861,9 @@ window.__onUpdateChecked = function (res) {
         return;
     }
     if (!res.available) {
-        st.innerHTML = '<span class="ver-update-ok">已是最新版本（v' + verEsc(res.current || '') + '）</span>';
+        // note：iOS 侧用来说明「更新走 TestFlight / App Store」，安卓不会带这个字段。
+        st.innerHTML = '<span class="ver-update-ok">已是最新版本（v' + verEsc(res.current || '') + '）'
+            + (res.note ? '　' + verEsc(res.note) : '') + '</span>';
         return;
     }
     verUpdateUrl = res.url;

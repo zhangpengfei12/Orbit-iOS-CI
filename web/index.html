@@ -453,8 +453,8 @@
                         </div>
                         <div class="action-hints">
                             <div class="action-hint">
-                                <div class="action-hint-title">为什么「文件夹」里看不到文件？</div>
-                                <div class="action-hint-text">安卓 11 及以上默认禁止应用直接读取手机存储，未授权的目录会显示为空。请先点上面的「选择文件夹」授权视频目录（推荐，无需任何额外权限），再回到媒体库执行一次深度扫描。手动输入的路径需要应用已获得视频读取权限，成功率低于文件夹选择器。</div>
+                                <div class="action-hint-title">为什么媒体库里看不到文件？</div>
+                                <div class="action-hint-text">iOS 不允许应用直接遍历手机存储，也没有「授权整个文件夹」这一步，视频必须先导入才能播。请点上面的「选择视频（相册 / 文件）」，把视频与同名 <code>.funscript</code> 一起导入本应用媒体库，再回到媒体库执行一次深度扫描。导入的文件都保存在 App 内部，卸载 App 会一并删除，重要文件请保留原稿。</div>
                             </div>
                         </div>
                     </div>
@@ -826,30 +826,29 @@
                             <div class="scan-action-buttons">
                                 <button class="btn-save" id="osrPlay">开始</button>
                                 <button class="tool-btn ob-btn--danger" id="osrStop">停止</button>
-                                <!-- 网页操作：用系统浏览器（优先 Chrome）打开 Ayva Stroker Lite 远程控制页。
-                                     应用内 WebView 不支持 Web Serial / Web Bluetooth，连接设备的按钮会点击无反应，
-                                     因此必须在浏览器里打开才能连接设备。 -->
-                                <button class="tool-btn" id="osrOpenWebApp" type="button">网页操作</button>
+                                <!-- 网页操作：安卓下跳系统浏览器（优先 Edge）打开 Ayva Stroker Lite，
+                                     靠浏览器的 Web Serial / Web Bluetooth 直连设备。
+                                     ⚠ iOS 这条路彻底走不通：iOS 的 Safari 与所有第三方浏览器内核
+                                     都不提供 Web Serial，也**不支持 Web Bluetooth**，跳出去也连不上。
+                                     故 iOS 版隐藏按钮，改为引导使用 App 内自带的蓝牙（BLE）与 WiFi（UDP）。 -->
+                                <button class="tool-btn" id="osrOpenWebApp" type="button" style="display:none">网页操作</button>
                             </div>
-                            <div style="margin-top:8px;font-size:12px;color:#9a9ab5;line-height:1.6">网页操作会在系统浏览器中打开（优先 Edge，没装则依次回退 Chrome 与系统默认浏览器），以便连接设备的蓝牙 / 串口；应用内 WebView 不支持这些接口，点开后在浏览器里连接即可。</div>
+                            <div style="margin-top:8px;font-size:12px;color:#9a9ab5;line-height:1.6">iOS 的浏览器不支持网页直连串口 / 蓝牙，请直接用本页上方的连接方式：<strong>蓝牙</strong>用 App 内扫描配对，<strong>WiFi</strong>填设备 IP 与端口。设备自带的配网页可点「打开设备配置」在 Safari 里打开。</div>
                         </div>
 
                         <!-- v2.7.21：自动模式「网页操作」下方的浏览器准备提示 + 连接方法图
-                             浏览器为什么要用 Edge：蓝牙 / 串口连接靠的是浏览器的「附近设备」能力，
-                             只有 Edge / Chrome 这类现代浏览器支持，应用内 WebView 不支持，所以必须跳到系统浏览器。 -->
+                             安卓要用 Edge 是因为蓝牙 / 串口靠浏览器的「附近设备」能力；
+                             ⚠ iOS 上整个前提不成立（无 Web Serial、无 Web Bluetooth），
+                             故这里换成 iOS 自己的排查步骤：BLE 授权、本机网络授权、同一网段。 -->
                         <div class="auto-web-tip" id="autoWebTip">
-                            <div class="auto-web-tip-t">连不上设备？先把浏览器按下面几步准备好</div>
+                            <div class="auto-web-tip-t">连不上设备？按下面几步检查</div>
                             <ol class="auto-web-tip-steps">
-                                <li>下载<strong> Edge 浏览器</strong>并安装，到系统「设置 → 应用 → 默认应用」里把它设为<strong>默认浏览器</strong>。</li>
-                                <li>在<strong>桌面</strong>长按（右键）Edge 图标，打开它的<strong>「附近设备」权限</strong>（个别系统版本叫「附近共享」）。</li>
-                                <li>把本 App <strong>从后台划掉彻底退出</strong>，然后重新进入一次。</li>
-                                <li>回到本页点<strong>「网页操作」</strong>，在浏览器里再按下面的顺序连设备。</li>
+                                <li>首次连蓝牙时系统会弹<strong>「允许使用蓝牙」</strong>，请点允许；误点拒绝后到<strong>系统设置 → Orbit → 蓝牙</strong>重新打开。</li>
+                                <li>用 WiFi（UDP）连接时，系统会弹<strong>「允许查找并连接本地网络设备」</strong>，同样要允许，否则发不出指令。</li>
+                                <li>确认手机与设备处在<strong>同一个 Wi-Fi</strong>（设备配网请用 2.4GHz 频段），IP 与端口填的是设备实际地址。</li>
+                                <li>点上面的<strong>「连接测试」</strong>：设备有明显动作即链路打通；没动作先看右上角链路状态是否显示已连接。</li>
                             </ol>
-                            <div class="auto-web-tip-note">第一次进入要加载一会儿，稍等一下再操作；连上后左上角不再是 Disconnected 就是成功了。</div>
-                            <div class="auto-web-tip-fig">
-                                <img src="/img/connect-guide.jpg" alt="连接设备步骤指引：先选择机型，再点击连接，最后点开始">
-                                <div class="auto-web-tip-cap">① 先选择机型　→　② 点击连接　→　③ 点开始</div>
-                            </div>
+                            <div class="auto-web-tip-note">iOS 没有 USB / 串口连接方式，只能走蓝牙或 WiFi；设备自带配网页点「打开设备配置」会在 Safari 里打开。</div>
                         </div>
                     </div>
 
@@ -1206,9 +1205,9 @@
                             <p class="hm-help-p">运行中可直接切模式，系统会自动停掉当前模式再按新模式启动，不用先手动停止。</p>
                             <div class="hm-help-h">十、VR 一体机与 VR 盒子</div>
                             <p class="hm-help-p">在「VR 一体机」页连接外部 VR 播放器（DeoVR / HereSphere）。连接后，影片时间轴作为统一时间源，OSR 脚本与之对齐，实现“视听 + 体感”同步。首页「VR盒子」则是用手机放进 VR 眼镜盒里看，两者互不影响。</p>
-                            <div class="hm-help-h">十一、切到后台也要继续跑</div>
-                            <p class="hm-help-p">播放影片或运行自动模式时切到后台（甚至锁屏），设备会继续跟随 —— 靠的是多层配合：<strong>播放时钟在原生侧按系统时间自驱</strong>（不依赖网页的定时器）、<strong>前台服务 + 唤醒锁</strong>（进程不被冻结、息屏后 CPU 与 WiFi 不被降频）、<strong>兜底闹钟</strong>（服务万一被回收会自动拉回）、<strong>页面被告知"已在后台"</strong>（视频被系统静默暂停时也不会误报「已暂停」）。</p>
-                            <p class="hm-help-p">国产 ROM（小米 / 华为 / OPPO / vivo 等）还有一层独立的「后台耗电管理 / 自启动管理」，比前台服务更强，没进白名单照样会被冻结。请到「设备」页找到<strong>后台运行</strong>卡片，点「允许后台运行」把本应用加入电池优化白名单；若仍被限制，再到系统设置的「电池 → 后台耗电管理」里把 Orbit 设为「无限制 / 允许后台活动」。</p>
+                            <div class="hm-help-h">十一、关于切到后台</div>
+                            <p class="hm-help-p">iOS 与安卓不同：系统不允许应用常驻后台，切到后台或锁屏后<strong>进程会在数秒内被挂起，设备驱动随之停止</strong>。本应用已启用音频后台模式，播放带声音的影片时可在后台继续出声；但体感驱动只在<strong>前台</strong>保持连续。</p>
+                            <p class="hm-help-p">回到前台时会自动按影片进度重新对齐，不需要手动重来。因此建议随播时保持 Orbit 在前台；若必须息屏，可在系统「设置 → 辅助功能 → 显示与文字大小 → 自动锁定」里临时设为「永不」。</p>
                             <div class="hm-help-h">十二、试用与激活</div>
                             <ul class="hm-help-list">
                                 <li>首次进入可<strong>试用 15 天</strong>，点「开始试用」才开始计时；到期后是<strong>软拦截</strong>——还能进首页，点功能才弹激活面板。</li>
@@ -1220,7 +1219,7 @@
                             </ul>
                             <p class="hm-help-p">已知硬边界（本地方案只能做到这样）：Root / Magisk、改过安装包、模拟器、应用双开多用户、开了 WebView 调试，都可能绕过校验。</p>
                             <div class="hm-help-h">十三、在线更新</div>
-                            <p class="hm-help-p">「版本信息」页的<strong>检查更新 / 立即更新</strong>是同一个按钮：没发现新版时显示「检查更新」，发现新版后变成「立即更新」，点一下就下载 APK 并安装（主源为腾讯云静态托管，失败自动降级 GitHub Releases）。下载完成会先校验完整性再交给系统安装，中途可在同一按钮看到进度。</p>
+                            <p class="hm-help-p">iOS 版<strong>不提供 APK 在线更新</strong>：新版本统一经 <strong>TestFlight</strong> 分发（首次需在 App Store 装一次 TestFlight 并接受邀请），也可在 App Store 里直接更新。「版本信息」页的「检查更新」只用于确认当前版本号。</p>
                             <p class="hm-help-p">「版本信息」页会列出真实发过的全部版本与更新点，更新记录里出现的每个版本号都对应一个正式包。</p>
                             <div class="hm-help-h">十四、常见问题</div>
                             <ul class="hm-help-list">
@@ -1230,11 +1229,11 @@
                                 <li><strong>脚本不跟随影片</strong>：检查影片与 <code>.funscript</code> 是否同名同目录；多轴脚本还要看轴后缀对不对得上。</li>
                                 <li><strong>配网配不上</strong>：绝大多数是 Wi-Fi 频段问题 —— 必须用 <strong>2.4GHz</strong> 频段的 Wi-Fi，<strong>5GHz 频段的 Wi-Fi 不支持配网</strong>；配完确认手机连的是配好网后的那个网络。</li>
                                 <li><strong>配网页打不开（连接超时 / 页面没有加载出来）</strong>：确认已连上设备热点 <code>SR6-Config</code>（密码 <code>12345678</code>），且地址栏是 <code>192.168.4.1</code>；页面会给出「重试」与「用系统浏览器打开」两个出口。</li>
-                                <li><strong>提示「需要授权保存位置」</strong>：选完视频后会自动弹出文件夹选择器，选中视频所在文件夹并允许「写入」即可；部分目录（如系统 Download 根目录）不开放写入，可把视频移到 Movies 等普通目录。</li>
+                                <li><strong>脚本没有随影片加载</strong>：iOS 只认「和视频一起导入到媒体库」的同名脚本。请在导入视频时把 <code>.funscript</code> 一并选上（多选即可），或到「媒体库」页重新导入一次；放手机原目录里的脚本 App 读不到。</li>
                                 <li><strong>生成出来的脚本太乱或太软</strong>：先降「笔触频率上限」，再调「强度灵敏度」与「平滑强度」，多生成几次对比。</li>
-                                <li><strong>切到后台设备就停</strong>：先看「设备 → 后台运行」卡片是否显示"已允许"；未允许就点一下按钮加白名单。若已允许仍会停，通常是该机型的「后台耗电管理」把 Orbit 归到了智能省电，去系统设置里改成「无限制」。</li>
+                                <li><strong>切到后台设备就停</strong>：这是 iOS 的系统行为（应用进入后台数秒即被挂起），不是故障。随播时请保持 Orbit 在前台，或用「设置 → 辅助功能 → 自动锁定 → 永不」避免息屏。</li>
                                 <li><strong>弹激活窗口要卡密但我买过了</strong>：把机器码发给客服微信号 <code>yeee9991</code>（或扫客服二维码），客服核对订单后发你 116 字符的完整卡密，整段粘回输入框即可。</li>
-                                <li><strong>点「检查更新」提示 404</strong>：更新服务器上还没发布过在线更新版本，属正常状态，等发布后这里就能一键更新。</li>
+                                <li><strong>更新提示不可用 / 404</strong>：iOS 不走在线更新通道，请以 TestFlight 或 App Store 里的版本为准。</li>
                                 <li><strong>自动页「网页操作」里的网站打不开</strong>：那是外部站点，打不开多半是手机当前网络访问不了它（境外站点较常见）。页面会把具体原因写在上面，可以点「重试」或「用系统浏览器打开」；换一个网络往往就好了。</li>
                             </ul>
                             <p class="hm-help-note">本应用所有数据均保存在本机，不会上传任何服务器。</p>
