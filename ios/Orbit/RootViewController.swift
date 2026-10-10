@@ -34,6 +34,9 @@ final class RootViewController: UIViewController {
         let view = WKWebView(frame: .zero, configuration: config)
         view.navigationDelegate = self
         view.scrollView.bounces = false
+        // ⚠ 禁止双指捏合缩放（用户要求页面缩放固定）；不影响单指滚动与控件拖动。
+        view.scrollView.bouncesZoom = false
+        view.scrollView.pinchGestureRecognizer?.isEnabled = false
         view.isOpaque = false
         view.backgroundColor = .black
         return view

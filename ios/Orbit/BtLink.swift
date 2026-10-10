@@ -238,7 +238,7 @@ final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             switch state {
             case .poweredOn:
                 emit("window.__onBluetoothPermission && window.__onBluetoothPermission(true)")
-            case .unauthorized, .restricted:
+            case .unauthorized:
                 emit("window.__onBluetoothPermission && window.__onBluetoothPermission(false)")
             default: break
             }
