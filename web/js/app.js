@@ -36,6 +36,35 @@ var activeStreamHint = '';
 var STORAGE_PREFIX = 'orbit.web.';
 var scanPollingStarter = null;
 
+// ─── 平台判定 ──────────────────────────────────────────────
+// 这个项目原本是安卓工程，前端里有一批「只有安卓原生管线才撑得住」的功能，
+// 典型的就是「AI 生成脚本」——要解码整段视频做运动分析，iOS 侧根本没有这段管线。
+// 这类接口在 iOS 上只能返回未实现，如果前端照旧把面板摆成可用，
+// 用户点下去就是「永远转圈 / 假进度」，比直接说不支持更让人困惑。
+// 故这里判定平台，让前端主动把这类功能降级并说明替代路径。
+function orbitPlatformSync() {
+    try {
+        if (window.Orbit && typeof window.Orbit.platform === 'function') {
+            var p = window.Orbit.platform();
+            if (typeof p === 'string' && p) return p;
+        }
+    } catch (e) {}
+    return '';
+}
+var ORBIT_PLATFORM = orbitPlatformSync();
+
+/** 是否 iOS：原生桥自报 ios，或 /api/status 自报 ios（浏览器里访问同样生效）。
+ *  安卓没有 Orbit.platform()（桥的兜底调用返回 undefined），自然判定为非 iOS。 */
+function orbitIsIOS() {
+    return ORBIT_PLATFORM === 'ios' || window.__orbitPlatform === 'ios';
+}
+
+/** 所有「平台相关门面开关」统一入口；拿到 /api/status 后再调一次以覆盖异步场景。 */
+function applyPlatformGates() {
+    recApplyPlatformGate();
+    vrbtApplyPlatformGate();
+}
+
 function itemPosterSrc(id) {
     var src = '/api/items/' + id + '/poster';
     return thumbnailRefreshToken ? src + '?v=' + encodeURIComponent(thumbnailRefreshToken) : src;
@@ -2925,9 +2954,13 @@ function initSettings() {
             fetch('/api/upload/cover', { method: 'POST', body: formData })
                 .then(function(r) { return r.json(); })
                 .then(function(d) {
-                    if (d.path) {
+                    if (d && d.path) {
                         var coverEl = $('libraryEditCover');
                         if (coverEl) coverEl.value = d.path;
+                    } else if (d && d.implemented === false) {
+                        // 占位实现会返回 ok:true 但没有 path，
+                        // 不提示的话用户以为封面上传成功了。
+                        libToast((d.note || '封面上传') + '（未实现）');
                     }
                 })
                 .catch(function() {})
@@ -3188,6 +3221,9 @@ function initSettings() {
 
     function recStart() {
         if (!recPick) { recHint('请先选一个视频', false); libToast('请先选一个视频'); return; }
+        // iOS 没有视频逐帧分析管线，/api/record/* 全是未实现：
+        // 不拦住的话会一直轮询 status 干等（按钮被禁用时依然可能被程序化触发）。
+        if (orbitIsIOS()) { recHint('iOS 版暂不支持自动生成脚本', false); libToast('iOS 版暂不支持自动生成脚本'); return; }
         recShowProgress(true);
         recSetBar(1, '投递任务…');
         recJobBegin('generate');
@@ -3384,7 +3420,25 @@ function initSettings() {
         bindRange('recSens', 'recSensVal', function (v) { return (v / 100).toFixed(1) + '\u00D7'; });
         bindRange('recSmooth', 'recSmoothVal', function (v) { return v + '%'; });
         bindRange('recOffset', 'recOffsetVal', function (v) { return v + ' ms'; });
+        recApplyPlatformGate();
     })();
+
+    /** iOS 降级：整条「视频 → 脚本」的逐帧分析管线在 iOS 上不存在（/api/record/* 均未实现），
+        把面板摆成可用只会让人点下去干等。这里直接禁用并给出替代路径：
+        导入现成的 .funscript（与视频同名一起导入媒体库即可）。 */
+    function recApplyPlatformGate() {
+        if (!orbitIsIOS()) return;
+        var pick = $('recPickVideo'), st = $('recStart'), gb = $('recGrantBtn');
+        [pick, st, gb].forEach(function (btn) {
+            if (!btn) return;
+            btn.disabled = true;
+            btn.style.opacity = '0.45';
+            btn.style.cursor = 'not-allowed';
+        });
+        recHint('iOS 版暂不支持自动生成脚本', false);
+        var note = $('recIosNote');
+        if (note) note.style.display = '';
+    }
 
     // ── Analyze panel ──────────────────────────────────────
     var analyzePollTimer = null;
@@ -3571,6 +3625,11 @@ function loadDashboard() {
     fetch('/api/status')
         .then(function(r) { return r.json(); })
         .then(function(d) {
+            // 平台标识：iOS 把一批安卓专属管线的功能降级（见 applyPlatformGates）
+            if (d && d.platform) {
+                window.__orbitPlatform = String(d.platform);
+                applyPlatformGates();
+            }
             // 顶部运行信息块（版本/视频数量/播放状态/时间源/浏览器识别/UA）已按需求移除，
             // 这里只保留「时间源提示同步」与下方 DeoVR 连接面板。
             syncActiveStreamHint(d);
@@ -3645,6 +3704,25 @@ function initVrBt() {
     if (btnStop) btnStop.addEventListener('click', vrbtDisconnect);
     vrbtSyncRoleUI();
     vrbtRefreshStatus();
+    vrbtApplyPlatformGate();
+}
+
+/** iOS 降级：VR 蓝牙时间桥（头显端广播时间轴、手机端接收）iOS 端还没实现，
+    点「扫描设备」会始终找不到设备（后端只能返回空列表），
+    容易让人以为是头显没开广播。直接禁用并指向 DeoVR Wi-Fi 联动。 */
+function vrbtApplyPlatformGate() {
+    if (!orbitIsIOS()) return;
+    ['btnVrbtScan', 'btnVrbtStart', 'btnVrbtDisconnect'].forEach(function (id) {
+        var btn = $(id);
+        if (!btn) return;
+        btn.disabled = true;
+        btn.style.opacity = '0.45';
+        btn.style.cursor = 'not-allowed';
+    });
+    var hint = $('vrbtScanHint');
+    if (hint) hint.textContent = 'iOS 版暂未实现 VR 蓝牙时间桥';
+    var note = $('vrbtIosNote');
+    if (note) note.style.display = '';
 }
 
 function vrbtSyncRoleUI() {
@@ -3671,6 +3749,7 @@ function vrbtEnsurePermission() {
 function vrbtScan() {
     var hint = $('vrbtScanHint');
     var list = $('vrbtDevList');
+    if (orbitIsIOS()) { if (hint) hint.textContent = 'iOS 版暂未实现 VR 蓝牙时间桥'; return; }
     if (!vrbtEnsurePermission()) {
         if (hint) hint.textContent = '正在申请蓝牙权限，授权后请重试';
         return;
@@ -3743,6 +3822,11 @@ function vrbtRenderDevices(items) {
 
 function vrbtStart() {
     var role = $('vrbtRole') ? $('vrbtRole').value : 'sink';
+    if (orbitIsIOS()) {
+        var h0 = $('vrbtScanHint');
+        if (h0) h0.textContent = 'iOS 版暂未实现 VR 蓝牙时间桥，请用 DeoVR Wi-Fi 联动';
+        return;
+    }
     if (role === 'source') { vrbtConnect('source', ''); return; }
     var hint = $('vrbtScanHint');
     if (hint) hint.textContent = '请先点「扫描设备」，然后在列表里点头显';

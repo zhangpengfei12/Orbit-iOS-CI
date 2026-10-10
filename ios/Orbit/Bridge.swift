@@ -193,6 +193,10 @@ func bridgeInjectionScript() -> String {
           target.backgroundStatus = function(){
             return JSON.stringify({platform:'ios', supported:false});
           };
+          // 同步返回平台标识：前端据此把「iOS 上根本不存在的管线」（如 AI 生成脚本）
+          // 直接降级/禁用，而不是点下去永远转圈。安卓侧没有这个方法，
+          // Proxy 兜底调用会返回 undefined，前端自然判定为非 iOS，无需双端分支。
+          target.platform = function(){ return 'ios'; };
         }
         return new Proxy(target, {
           get: function(t, prop){

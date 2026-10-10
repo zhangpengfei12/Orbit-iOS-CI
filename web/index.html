@@ -375,6 +375,11 @@
                     <!-- VR 蓝牙时间桥 -->
                     <div class="settings-section" style="margin-top:16px" id="vrbtSection">
                         <h3>蓝牙连接</h3>
+                        <!-- iOS 降级说明：VR 蓝牙时间桥（BLE 广播时间轴）iOS 端还没有实现，
+                             按钮会被 app.js 的 vrbtApplyPlatformGate() 禁用，改用 DeoVR Wi-Fi 联动。 -->
+                        <div class="panel-desc" id="vrbtIosNote" style="display:none;color:#f0a63a">
+                            iOS 版暂未实现「VR 蓝牙时间桥」。请用上面的<strong>DeoVR Wi-Fi 联动</strong>（头显与手机同一 Wi-Fi，头显端开启 Remote control 并已打开一个视频）。
+                        </div>
                         <div id="vrbtPanel">
                             <div class="dash-row"><span class="dash-label">状态</span><span class="dash-value" id="dashVrbtStatus">--</span></div>
                             <div class="dash-row"><span class="dash-label">对端</span><span class="dash-value" id="dashVrbtPeer">--</span></div>
@@ -868,6 +873,12 @@
                     <div class="settings-section">
                         <h3>要处理的视频</h3>
                         <p class="panel-desc">选一个视频文件，直接点「开始生成」。脚本默认写在视频同一个文件夹；那个文件夹还没授权写入时会自动存到应用目录，播放时按视频名自动匹配，不用先去授权。</p>
+                        <!-- iOS 降级说明：/api/record/* 整条视频逐帧分析管线在 iOS 上不存在，
+                             面板按钮会被 app.js 的 recApplyPlatformGate() 禁用，这里给出替代路径。 -->
+                        <div class="panel-desc" id="recIosNote" style="display:none;color:#f0a63a">
+                            iOS 版暂不支持「从视频自动生成脚本」——这条链路需要解码整段视频做逐帧运动分析，iOS 端还没有对应的管线（安卓的实现在 <code>osr/ScriptRecorder.kt</code>）。<br>
+                            替代做法：在电脑上生成好 <code>.funscript</code>，或用现成的脚本站下载，再按<strong>「视频 + 同名 .funscript 一起导入」</strong>的方式导入本应用媒体库，播放时会自动匹配。导入步骤见上面的「本机视频目录」。
+                        </div>
                         <div class="dash-actions">
                             <div class="scan-action-buttons">
                                 <button class="tool-btn" id="recPickVideo" type="button">选择视频</button>

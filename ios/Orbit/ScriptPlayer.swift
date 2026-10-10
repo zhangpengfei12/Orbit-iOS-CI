@@ -125,7 +125,15 @@ final class ScriptPlayer {
         case "play":
             guard hasScript() else { return false }
             setSync(true)
-            applyClock(playing: true, mediaMs: 0)
+            // ⚠ 不能 applyClock(playing:true, mediaMs:0)：那样会把媒体时钟打回 0，
+            //   用户在第 30 分钟按一下播放就跳回片头。play 只负责「接着当前锚点继续走」，
+            //   真正的对齐交给 /api/osr/playback-time（漂移 >500ms 才重锚）。
+            lock.lock()
+            if !playing {
+                clockWallAnchorMs = nowMs()
+                playing = true
+            }
+            lock.unlock()
             startLoop()
             return true
         case "pause":

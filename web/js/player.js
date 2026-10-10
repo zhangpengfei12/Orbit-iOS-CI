@@ -1370,7 +1370,20 @@ function isBg() { return nativeBg || document.hidden; }
     }
     function requestFs(el) {
         var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.webkitRequestFullScreen;
-        if (!fn) { if (syncText) syncText.textContent = '当前环境不支持全屏'; return; }
+        if (!fn) {
+            // ⚠ iOS（iPhone）的 WKWebView 不支持任意元素的 requestFullscreen，
+            //   安卓这条路走的是原生 OrbitPlayer.setFullscreen（横屏 + 隐藏系统栏），
+            //   iOS 没有那一层 → 原样照搬的话「全屏」按钮就是个死按钮。
+            //   退路：<video> 元素支持 webkitEnterFullscreen，进的是系统播放器全屏，
+            //   播放与脚本同步都不中断。iPad 支持元素全屏，不会走到这里。
+            var v = document.querySelector('video');
+            if (v && typeof v.webkitEnterFullscreen === 'function') {
+                try { v.webkitEnterFullscreen(); } catch (e) {}
+                return;
+            }
+            if (syncText) syncText.textContent = '当前环境不支持全屏';
+            return;
+        }
         try {
             var pr = fn.call(el);
             if (pr && pr.catch) pr.catch(function() {});
