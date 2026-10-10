@@ -168,12 +168,10 @@ final class OrbitServer {
         //   keep-alive 分支不成立 → 必然响应完关连接。唯一出路是 length >= 0 的
         //   响应构造：.ok(.data(...)) 会自动写 Content-Length + Connection: keep-alive
         //   并保持连接打开 —— 与主流服务器一致，WebKit 千锤百炼的路径。
-        //   代价：带不上 Cache-Control: no-cache（.ok(.data) 不支持附加头）。
-        //   主文档已用 reloadIgnoringLocalAndRemoteCacheData 兜底；子资源升级后若
-        //   出现「旧 JS」问题再回头解决（对比黑屏是次要问题）。
-        // ✅ 后经核实 Swifter 1.5.0 的 .ok 自带第二个关联值（自定义头字典），
-        //   可同时携带 no-cache —— 覆盖安装升级后旧缓存资源也能强制失效。
-        return .ok(.data(data, contentType: mime),
-                   ["Cache-Control": "no-cache, no-store, must-revalidate"])
+        //   代价：Swifter 1.5.0 的 .ok 仅单参数（body），无法附加 Cache-Control 头。
+        //   子资源「旧缓存」靠前端资源引用自带的 ?v= 缓存戳规避：每次发版都升戳，
+        //   子资源 URL 必然变化，WKWebView 不会命中旧版本；主文档另用
+        //   reloadIgnoringLocalAndRemoteCacheData 兜底。因此无需 .ok 携带 no-cache。
+        return .ok(.data(data, contentType: mime))
     }
 }
