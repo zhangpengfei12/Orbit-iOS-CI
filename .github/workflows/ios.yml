@@ -358,11 +358,17 @@ jobs:
               echo "  ok: $k"
             fi
           done
-          # 版本号必须来自 build 设置（1.0.0 + 真实 build 号），不能是 Xcode 默认 1.0/1
+          # 版本号必须来自 build 设置（project.yml 的 MARKETING_VERSION + 真实 build 号），
+          # 不能是 Xcode 默认的 1.0/1。
+          # ⚠ iOS 走**独立版本线 1.0.x**（与安卓 2.7.x 无关），所以这里不能写死 1.0.0；
+          #   期望值直接从 ios/project.yml 读，以后升版只改 project.yml，不必再动这条断言。
+          EXPECTED_VER=$(sed -nE 's/^[[:space:]]*MARKETING_VERSION:[[:space:]]*"?([0-9][0-9.]*)"?.*/\1/p' ios/project.yml | head -1)
+          EXPECTED_VER="${EXPECTED_VER:-1.0.1}"
           VER=$(plutil -p "$APP/Info.plist" 2>/dev/null | grep CFBundleShortVersionString | sed -E 's/.*=> "([^"]*)".*/\1/')
           BND=$(plutil -p "$APP/Info.plist" 2>/dev/null | grep CFBundleVersion | sed -E 's/.*=> "([^"]*)".*/\1/')
+          echo "期望版本号（iOS 独立版本线，来自 project.yml）: $EXPECTED_VER"
           echo "CFBundleShortVersionString=$VER  CFBundleVersion=$BND"
-          if [ "$VER" != "1.0.0" ]; then echo "!! 版本号异常（期望 1.0.0，实际 $VER）"; fail=1; fi
+          if [ "$VER" != "$EXPECTED_VER" ]; then echo "!! 版本号异常（期望 $EXPECTED_VER，实际 $VER）"; fail=1; fi
           if [ "$fail" = "1" ]; then echo "产物 Info.plist 校验失败，终止。"; exit 1; fi
           echo "产物 Info.plist 校验通过。"
 
