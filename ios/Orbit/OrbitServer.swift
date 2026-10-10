@@ -20,10 +20,27 @@ final class OrbitServer {
     private var startError: String?
     private(set) var listenPort: Int?
 
-    /// bundle 内 web/ 目录路径。顶层 web/ 以「文件夹引用」方式拷进 Resources，
-    /// 因此目录结构保持为 <bundle>/web/{home.html,index.html,player.html,js,css,img}。
+    /// bundle 内 web/ 目录路径。
+    /// 候选根目录依次探测（存在 home.html 才算有效），防止单一来源失效导致整页黑屏：
+    /// 1) <bundle>/web          —— 正常路径：folder reference 拷进 Resources 的目录
+    /// 2) <bundle>              —— 兜底：资源被「打平」拷到 Resources 根的情况
+    /// ⚠ build 23 黑屏教训：folder reference 指向工程外路径（../web）时，Xcode 26 归档
+    ///   会拷出**空目录**（目录在、文件全丢），页面 404 → 纯黑屏。打包已改为工程内拷贝
+    ///   （见 project.yml 与 ios.yml），这里保留多候选探测作运行时兜底。
     private var webRoot: String? {
-        Bundle.main.resourceURL?.appendingPathComponent("web").path
+        guard let res = Bundle.main.resourceURL else { return nil }
+        let fm = FileManager.default
+        let candidates = [
+            res.appendingPathComponent("web").path,   // 正常：<bundle>/web/home.html
+            res.path                                   // 兜底：<bundle>/home.html
+        ]
+        for c in candidates where fm.fileExists(atPath: (c as NSString).appendingPathComponent("home.html")) {
+            if c != candidates[0] {
+                Diagnostics.shared.log("SERVER", "⚠ 常规 web/ 目录无效，已回退到资源根目录")
+            }
+            return c
+        }
+        return nil
     }
 
     var isRunning: Bool { server.operating }

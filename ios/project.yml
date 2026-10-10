@@ -32,8 +32,13 @@ targets:
     sources:
       - path: Orbit
     resources:
-      # 顶层 web/ 是 Android 与 iOS 共用的唯一真相源，用文件夹引用整体打进 bundle
-      - path: ../web
+      # ⚠ build 23 黑屏根因：folder reference 指向工程外路径（../web）时，
+      #   Xcode 26 新构建系统归档会产出**空的 web 目录**（目录在、文件全丢），
+      #   真机诊断确认 bundle 内 web/ 顶层条目为空。
+      #   修复：CI 在 xcodegen generate 之前把 ../web 拷进工程内 WebResources/web
+      #   （见 ios.yml 的「拷贝 web 资源进工程内」步骤），folder reference 改指工程内路径。
+      #   本地生成前也要先执行：mkdir -p WebResources && cp -R ../web WebResources/web
+      - path: WebResources/web
         type: folder
         buildPhase: resources
       # 隐私清单：不声明 UserDefaults 等「必需理由 API」，构建会被判 Invalid

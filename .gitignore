@@ -2,3 +2,5 @@
 Thumbs.db
 *.log
 build/
+WebResources/
+ios/WebResources/

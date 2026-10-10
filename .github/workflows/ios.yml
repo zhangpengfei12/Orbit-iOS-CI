@@ -52,6 +52,16 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode_26.3.app
       - name: 安装 XcodeGen
         run: brew install xcodegen
+      # ⚠ build 23 黑屏修复：project.yml 的 folder reference 现在指向工程内 WebResources/web，
+      #   生成工程前必须先把共享层 web/ 拷进去（Xcode 26 归档不吃工程外路径的 folder reference，
+      #   会拷出空目录 —— 真机诊断已实锤：bundle 内 web/ 存在但顶层条目为空）。
+      - name: 拷贝 web 资源进工程内
+        run: |
+          rm -rf ios/WebResources
+          mkdir -p ios/WebResources
+          cp -R web ios/WebResources/web
+          echo "web 文件数: $(find ios/WebResources/web -type f | wc -l | tr -d ' ')"
+          test -f ios/WebResources/web/home.html || { echo "!! home.html 缺失"; exit 1; }
       - name: 生成 Xcode 工程
         run: cd ios && xcodegen generate
       - name: 编译（关闭签名，纯验证代码）
@@ -108,6 +118,16 @@ jobs:
       - name: 安装 XcodeGen
         if: steps.sig.outputs.ready == 'true'
         run: brew install xcodegen
+      # ⚠ 与 compile-check 同理：先把共享层 web/ 拷进工程内，folder reference 才能真正进包
+      #   （build 23 黑屏根因：工程外路径的 folder reference 被 Xcode 26 归档拷成空目录）。
+      - name: 拷贝 web 资源进工程内
+        if: steps.sig.outputs.ready == 'true'
+        run: |
+          rm -rf ios/WebResources
+          mkdir -p ios/WebResources
+          cp -R web ios/WebResources/web
+          echo "web 文件数: $(find ios/WebResources/web -type f | wc -l | tr -d ' ')"
+          test -f ios/WebResources/web/home.html || { echo "!! home.html 缺失"; exit 1; }
       - name: 生成 Xcode 工程
         if: steps.sig.outputs.ready == 'true'
         run: cd ios && xcodegen generate
@@ -244,6 +264,20 @@ jobs:
             DEVELOPMENT_TEAM="$TEAM_ID" \
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
             archive
+
+      # ⚠ 黑屏回归断言：bundle 内 web/ 必须有真实文件（build 23 曾拷出空目录，真机纯黑屏）
+      - name: 校验归档产物 web/ 资源
+        if: steps.sig.outputs.ready == 'true'
+        run: |
+          APP="$RUNNER_TEMP/Orbit.xcarchive/Products/Applications/Orbit.app"
+          echo "=== app bundle 内 web/ 顶层 ==="
+          ls "$APP/web" 2>/dev/null || { echo "!! web/ 目录不存在"; exit 1; }
+          N=$(find "$APP/web" -type f | wc -l | tr -d ' ')
+          echo "web/ 文件总数: $N"
+          for f in home.html index.html player.html js/app.js css/app.css; do
+            test -f "$APP/web/$f" || { echo "!! 缺失 $f"; exit 1; }
+          done
+          echo "web/ 资源校验通过 ✓"
 
       # ⚠ 兜底：Xcode 26 + XcodeGen 实测完全忽略 INFOPLIST_FILE（GENERATE=NO/YES 都试过，产物 plist
       #   始终是 Xcode 自动生成版，自定义键全丢、被 Apple 判 "No orientations were specified"）。
