@@ -2790,6 +2790,9 @@ function initSettings() {
         });
     });
 
+    // VR 蓝牙时间桥（与下方 DeoVR Wi-Fi 面板并存，两种链路二选一）
+    initVrBt();
+
     // DeoVR 连接面板
     var btnDeovrConnect = $('btnDeovrConnect');
     var btnHereSphereConnect = $('btnHereSphereConnect');
@@ -3601,7 +3604,11 @@ function pollDeovrStatus() {
             .then(function(r) { return r.json(); })
             .then(function(d) {
                 updateDeovrPanelUI(d);
-                if (d.status === 'CONNECTED' || d.status === 'ERROR' || d.status === 'STOPPED' || attempts >= 30) {
+                // 连着就一直轮询：头显每秒推一帧，进度要持续刷新才能看得见「同步中」。
+                // 断开 / 出错 / 试了 30 次仍没连上才收（原来一见 CONNECTED 就停，
+                // 真实化后状态是 PLAYING/PAUSED，照旧规则反而不会停，也不会刷新）。
+                var stillConnected = (d.connected === true);
+                if (!stillConnected && (d.status === 'ERROR' || d.status === 'STOPPED' || attempts >= 30)) {
                     clearInterval(deovrPollTimer);
                     deovrPollTimer = null;
                 }
@@ -3614,6 +3621,196 @@ function pollDeovrStatus() {
                 }
             });
     }, 1000);
+}
+
+/* ══════════════ VR 蓝牙时间桥 ══════════════
+   DeoVR / HereSphere 只有 Wi-Fi 接口，官方没有蓝牙通道；安卓蓝牙网络共享（PAN）
+   又要系统级权限。所以蓝牙链路的做法是：头显上也装 Orbit，用本机回环 127.0.0.1
+   连同机的 DeoVR 取时间轴，再通过 BLE / SPP 广播；手机端扫描连接后驱动设备。
+   两条链路（Wi-Fi / 蓝牙）拿到时间轴后走的是同一套脚本同步逻辑。 */
+var vrbtPollTimer = null;
+var vrbtScanTimer = null;
+
+function initVrBt() {
+    var roleEl = $('vrbtRole');
+    var btnScan = $('btnVrbtScan');
+    var btnStart = $('btnVrbtStart');
+    var btnStop = $('btnVrbtDisconnect');
+    if (roleEl) roleEl.addEventListener('change', vrbtSyncRoleUI);
+    if (btnScan) btnScan.addEventListener('click', vrbtScan);
+    if (btnStart) btnStart.addEventListener('click', vrbtStart);
+    if (btnStop) btnStop.addEventListener('click', vrbtDisconnect);
+    vrbtSyncRoleUI();
+    vrbtRefreshStatus();
+}
+
+function vrbtSyncRoleUI() {
+    var role = $('vrbtRole') ? $('vrbtRole').value : 'sink';
+    var srcRow = $('vrbtSourceRow');
+    var sinkRow = $('vrbtSinkRow');
+    if (srcRow) srcRow.style.display = (role === 'source') ? '' : 'none';
+    if (sinkRow) sinkRow.style.display = (role === 'sink') ? '' : 'none';
+}
+
+/** 安卓 12+ 扫描/连接蓝牙要运行时权限，没有就先向系统要一次。 */
+function vrbtEnsurePermission() {
+    try {
+        if (typeof window.Orbit === 'undefined') return true;
+        if (typeof window.Orbit.hasBluetoothPermission !== 'function') return true;
+        if (window.Orbit.hasBluetoothPermission()) return true;
+        if (typeof window.Orbit.requestBluetoothPermission === 'function') {
+            window.Orbit.requestBluetoothPermission();
+        }
+        return false;
+    } catch (e) { return true; }
+}
+
+function vrbtScan() {
+    var hint = $('vrbtScanHint');
+    var list = $('vrbtDevList');
+    if (!vrbtEnsurePermission()) {
+        if (hint) hint.textContent = '正在申请蓝牙权限，授权后请重试';
+        return;
+    }
+    if (hint) hint.textContent = '扫描中…';
+    if (list) list.innerHTML = '';
+    if (vrbtScanTimer) { clearInterval(vrbtScanTimer); vrbtScanTimer = null; }
+    fetch('/api/vrbt/scan', { method: 'POST' })
+        .then(function () {
+            var tries = 0;
+            vrbtScanTimer = setInterval(function () {
+                tries += 1;
+                fetch('/api/vrbt/scan')
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        if (d.scanning) {
+                            if (tries >= 20) {
+                                clearInterval(vrbtScanTimer); vrbtScanTimer = null;
+                                if (hint) hint.textContent = '扫描超时';
+                            }
+                            return;
+                        }
+                        clearInterval(vrbtScanTimer); vrbtScanTimer = null;
+                        vrbtRenderDevices(d.items || []);
+                        if (hint) {
+                            hint.textContent = (d.items && d.items.length)
+                                ? ('找到 ' + d.items.length + ' 个设备，点它连接') : '未找到设备';
+                        }
+                    })
+                    .catch(function () {
+                        clearInterval(vrbtScanTimer); vrbtScanTimer = null;
+                        if (hint) hint.textContent = '扫描失败';
+                    });
+            }, 1000);
+        })
+        .catch(function () { if (hint) hint.textContent = '扫描失败'; });
+}
+
+function vrbtRenderDevices(items) {
+    var list = $('vrbtDevList');
+    if (!list) return;
+    if (!items.length) {
+        list.innerHTML = '<div class="vrbt-empty">未扫描到设备。请确认对端已开启广播'
+            + '（头显端 Orbit 本页角色选「广播时间轴」并点开始）、两端蓝牙都已打开。</div>';
+        return;
+    }
+    list.innerHTML = '';
+    items.forEach(function (it) {
+        var row = document.createElement('div');
+        row.className = 'vrbt-dev';
+        var main = document.createElement('div');
+        main.className = 'vrbt-dev-main';
+        var nm = document.createElement('div');
+        nm.className = 'vrbt-dev-name';
+        nm.textContent = it.name || it.address;
+        var ad = document.createElement('div');
+        ad.className = 'vrbt-dev-addr';
+        ad.textContent = it.address + (it.bonded ? ' · 已配对' : '');
+        main.appendChild(nm);
+        main.appendChild(ad);
+        var tag = document.createElement('span');
+        tag.className = 'vrbt-dev-tag' + (it.isOrbit ? '' : ' vrbt-dev-tag--bonded');
+        tag.textContent = it.isOrbit ? 'Orbit' : (it.bonded ? '已配对' : '未知');
+        row.appendChild(main);
+        row.appendChild(tag);
+        row.addEventListener('click', function () { vrbtConnect('sink', it.address); });
+        list.appendChild(row);
+    });
+}
+
+function vrbtStart() {
+    var role = $('vrbtRole') ? $('vrbtRole').value : 'sink';
+    if (role === 'source') { vrbtConnect('source', ''); return; }
+    var hint = $('vrbtScanHint');
+    if (hint) hint.textContent = '请先点「扫描设备」，然后在列表里点头显';
+}
+
+function vrbtConnect(role, address) {
+    if (!vrbtEnsurePermission()) {
+        var s = $('dashVrbtStatus');
+        if (s) { s.textContent = '正在申请蓝牙权限，授权后请重试'; s.style.color = '#ffd479'; }
+        return;
+    }
+    var body = { role: role };
+    if (role === 'source') {
+        body.host = ($('vrbtSourceHost') && $('vrbtSourceHost').value.trim()) || '127.0.0.1';
+    } else {
+        body.address = address;
+        body.kind = 'auto';
+    }
+    fetch('/api/vrbt/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { vrbtRenderStatus(d); vrbtStartPoll(); })
+        .catch(function () {
+            var el = $('dashVrbtStatus');
+            if (el) { el.textContent = '连接失败'; el.style.color = '#ff6b6b'; }
+        });
+}
+
+function vrbtDisconnect() {
+    fetch('/api/vrbt/disconnect', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { vrbtRenderStatus(d); vrbtStopPoll(); })
+        .catch(function () { });
+}
+
+function vrbtStartPoll() { if (!vrbtPollTimer) vrbtPollTimer = setInterval(vrbtRefreshStatus, 1000); }
+function vrbtStopPoll() { if (vrbtPollTimer) { clearInterval(vrbtPollTimer); vrbtPollTimer = null; } }
+
+function vrbtRefreshStatus() {
+    fetch('/api/vrbt/status')
+        .then(function (r) { return r.json(); })
+        .then(function (d) { vrbtRenderStatus(d); })
+        .catch(function () { });
+}
+
+function vrbtRenderStatus(d) {
+    if (!d) return;
+    var st = $('dashVrbtStatus');
+    var peer = $('dashVrbtPeer');
+    var tr = $('dashVrbtTransport');
+    var txt = '--', color = '#dce8ee';
+    if (d.role === 'SINK') {
+        if (d.transport) { txt = '已连接'; color = '#22C55E'; }
+        else if (d.error) { txt = d.error; color = '#ff6b6b'; }
+        else { txt = '未连接'; }
+    } else if (d.role === 'SOURCE') {
+        if (d.error) { txt = d.error; color = '#ff6b6b'; }
+        else if (d.connected) { txt = '广播中 · 已取到时间轴'; color = '#22C55E'; }
+        else { txt = '广播中 · 等待本机 DeoVR…'; color = '#ffd479'; }
+    } else {
+        txt = '未启用';
+    }
+    if (st) { st.textContent = txt; st.style.color = color; }
+    if (peer) peer.textContent = d.peer || '--';
+    if (tr) {
+        tr.textContent = (d.transport === 'ble') ? '低功耗蓝牙 BLE'
+            : (d.transport === 'spp') ? '蓝牙串口 SPP' : '--';
+    }
 }
 
 function updateDeovrPanelUI(d) {
@@ -3632,10 +3829,15 @@ function updateDeovrPanelUI(d) {
         hostEl.value = d.host;
     }
     switch (status) {
+        // 2026-10-08：后端真实化后连上就回 PLAYING / PAUSED（不再是笼统的 CONNECTED）。
+        // 这两个状态都算「已连接」，必须和 CONNECTED 走同一套 UI，否则会掉进 default 显示「未连接」。
+        case 'PLAYING':
+        case 'PAUSED':
         case 'CONNECTED':
-            statusEl.textContent = '已连接' + (d.host ? ' (' + d.host + ')' : '');
-            statusEl.style.color = '#22C55E';
-            statusEl.textContent = '已连接 ' + modeLabel + (d.host ? ' (' + d.host + ')' : '');
+            var liveNow = (status === 'PLAYING');
+            statusEl.textContent = (liveNow ? '同步中 · 播放 ' : '已连接 · 暂停 ')
+                + modeLabel + (d.host ? ' (' + d.host + ')' : '');
+            statusEl.style.color = liveNow ? '#22C55E' : '#FFA500';
             if (connectBtn) { connectBtn.style.display = 'none'; }
             if (hereSphereBtn) { hereSphereBtn.style.display = 'none'; }
             if (disconnectBtn) { disconnectBtn.style.display = ''; }
@@ -3669,6 +3871,40 @@ function updateDeovrPanelUI(d) {
             if (hostEl) hostEl.disabled = false;
             break;
     }
+
+    // 影片 / 进度 / 脚本：真实化之后这三行才有意义——用户对不对得上片子、
+    // 脚本到底有没有匹配上，全靠它们看出来（之前后端是占位，永远是空的）。
+    var titleEl = $('dashDeovrTitle');
+    var timeEl = $('dashDeovrTime');
+    var scriptEl = $('dashDeovrScript');
+    var hasVideo = !!d.title;
+    if (titleEl) titleEl.textContent = d.title || '--';
+    if (timeEl) timeEl.textContent = fmtVrClock(d.currentTime, d.duration);
+    if (scriptEl) {
+        if (d.scriptLoaded) {
+            scriptEl.textContent = d.scriptName || '已加载';
+            scriptEl.style.color = '#22C55E';
+        } else if (hasVideo) {
+            scriptEl.textContent = '未找到同名脚本';
+            scriptEl.style.color = '#EF4444';
+        } else {
+            scriptEl.textContent = '--';
+            scriptEl.style.color = '';
+        }
+    }
+}
+
+/** VR 进度显示：「当前 / 总时长」，超过 1 小时补上小时位。 */
+function fmtVrClock(cur, dur) {
+    var c = Number(cur || 0), t = Number(dur || 0);
+    if (c <= 0 && t <= 0) return '--';
+    function hms(s) {
+        var v = Math.max(0, Math.floor(s));
+        var h = Math.floor(v / 3600), m = Math.floor((v % 3600) / 60), sec = v % 60;
+        var mm = h > 0 ? ('0' + m).slice(-2) : String(m);
+        return (h > 0 ? h + ':' : '') + mm + ':' + ('0' + sec).slice(-2);
+    }
+    return t > 0 ? (hms(c) + ' / ' + hms(t)) : hms(c);
 }
 
 function loadAnalyzeStatus() {
@@ -3917,6 +4153,202 @@ function selectSmbDir() {
     if ($('btnSelectDir').disabled) return;
     $('smbShare').value = smbBrowsePath;
     closeSmbBrowser();
+}
+
+// ─── SMB 快捷浏览（播放器「选择文件夹」旁的 SMB 网络按钮）──────────
+// 流程：点「SMB 网络」→ 配置弹窗（IP / 共享名 / 用户 / 密码 / 匿名）
+//       → 连接后浏览共享目录 → 点视频直接在内嵌播放器播放（同名 .funscript 自动加载）。
+var smbqCreds = { host: '', share: '', user: '', pass: '', domain: '', anonymous: false };
+var smbqPath = '';
+var smbqRequestId = 0;
+var smbqItemsCache = [];   // 当前 SMB 目录条目（含视频），供播放列表与渲染复用
+
+function initSmbQuick() {
+    var b;
+    b = $('libBtnSmb');                 if (b) b.addEventListener('click', openSmbQuickConfig);
+    b = $('btnSmbQuickConfigClose');    if (b) b.addEventListener('click', closeSmbQuickConfig);
+    b = $('btnSmbQuickConfigCancel');   if (b) b.addEventListener('click', closeSmbQuickConfig);
+    b = $('btnSmbQuickConnect');        if (b) b.addEventListener('click', connectSmbQuick);
+    b = $('btnSmbQuickBrowseClose');    if (b) b.addEventListener('click', closeSmbQuickBrowse);
+    b = $('smbqAnonymous');             if (b) b.addEventListener('change', smbqToggleCred);
+}
+
+function smbqToggleCred() {
+    var anon = $('smbqAnonymous') && $('smbqAnonymous').checked;
+    var creds = document.querySelectorAll('.smbq-cred');
+    creds.forEach(function(el){ el.style.display = anon ? 'none' : ''; });
+    if ($('smbqUser')) $('smbqUser').disabled = anon;
+    if ($('smbqPass')) $('smbqPass').disabled = anon;
+}
+
+function openSmbQuickConfig() {
+    fetch('/api/settings/smb')
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            if ($('smbqHost')) $('smbqHost').value = d.host || '';
+            if ($('smbqShare')) $('smbqShare').value = d.share || '';
+            if ($('smbqUser')) $('smbqUser').value = d.username || '';
+            if ($('smbqDomain')) $('smbqDomain').value = d.domain || '';
+            if ($('smbqAnonymous')) $('smbqAnonymous').checked = !!d.anonymous;
+            if ($('smbqPass')) { $('smbqPass').value = ''; $('smbqPass').placeholder = d.hasPassword ? '已设置（留空保持不变）' : '可选'; }
+            smbqToggleCred();
+        })
+        .catch(function(){});
+    var err = $('smbqError'); if (err) err.style.display = 'none';
+    var m = $('smbQuickConfigModal');
+    if (m) m.style.display = 'flex';   // 显式 flex：不依赖 CSS 回退，且弹窗已移到 body 顶层（曾嵌在隐藏的 #panel-smb 内导致点击无反应）
+}
+
+function closeSmbQuickConfig() { $('smbQuickConfigModal').style.display = 'none'; }
+
+function connectSmbQuick() {
+    var host = ($('smbqHost') ? $('smbqHost').value : '').trim();
+    if (!host) {
+        var err = $('smbqError');
+        if (err) { err.textContent = '请填写主机地址（IP）'; err.style.display = ''; }
+        if ($('smbqHost')) $('smbqHost').focus();
+        return;
+    }
+    var share = ($('smbqShare') ? $('smbqShare').value : '').trim();
+    var anonymous = $('smbqAnonymous') ? $('smbqAnonymous').checked : false;
+    var user = anonymous ? '' : (($('smbqUser') ? $('smbqUser').value : '').trim());
+    var pass = anonymous ? '' : (($('smbqPass') ? $('smbqPass').value : '').trim());
+    var domain = anonymous ? '' : (($('smbqDomain') ? $('smbqDomain').value : '').trim());
+    smbqCreds = { host: host, share: share, user: user, pass: pass, domain: domain, anonymous: anonymous };
+    // 持久化到 SMB 设置：既供下次预填，也供同名脚本加载（findLibForRawSmb 兜底读取）
+    fetch('/api/settings/smb', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host: host, share: share, username: user, password: pass, domain: domain, anonymous: anonymous })
+    }).catch(function(){});
+    closeSmbQuickConfig();
+    openSmbQuickBrowse('');
+}
+
+function closeSmbQuickBrowse() {
+    smbqRequestId++;
+    $('smbQuickBrowseModal').style.display = 'none';
+    smbqItemsCache = [];
+}
+
+function openSmbQuickBrowse(path) {
+    smbqPath = path;
+    smbqRequestId++;
+    var rid = smbqRequestId;
+    var bm = $('smbQuickBrowseModal');
+    if (bm) bm.style.display = 'flex';   // 显式 flex：不依赖 CSS 回退
+    var listEl = $('smbqList');
+    listEl.innerHTML = '<div class="spinner">连接中...</div>';
+    var pathEl = $('smbqPath');
+    if (pathEl) pathEl.textContent = path ? '/' + path : '/ (根目录)';
+    renderBreadcrumb($('smbqBreadcrumb'), path, function(nextPath){ openSmbQuickBrowse(nextPath); }, smbqCreds.share || smbqCreds.host);
+    var c = smbqCreds;
+    var url = '/api/smb/browse?host=' + encodeURIComponent(c.host) +
+        '&share=' + encodeURIComponent(c.share) +
+        '&username=' + encodeURIComponent(c.user) +
+        '&password=' + encodeURIComponent(c.pass) +
+        '&anonymous=' + (c.anonymous ? '1' : '0') +
+        '&domain=' + encodeURIComponent(c.domain) +
+        '&files=1' +
+        '&path=' + encodeURIComponent(path);
+    fetch(url)
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            if (rid !== smbqRequestId) return;
+            if (d.error) {
+                var errHtml = '<div class="modal-error">' + escapeHtml(d.error) + '</div>';
+                if (d.debug) {
+                    errHtml += '<div class="smbq-debug" style="margin-top:10px;padding:10px;background:rgba(0,0,0,0.3);border-radius:6px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all;color:#aaa;max-height:240px;overflow:auto;user-select:text;-webkit-user-select:text;">' +
+                        escapeHtml(JSON.stringify(d.debug, null, 2)) + '</div>' +
+                        '<button class="smbq-copy-debug" style="margin-top:8px;padding:6px 12px;background:#5a3d8a;border:none;border-radius:4px;color:#fff;font-size:12px;">复制调试信息</button>' +
+                        '<div style="margin-top:6px;font-size:11px;color:#888;">若按钮无效，可直接长按上方文字手动复制</div>';
+                }
+                listEl.innerHTML = errHtml;
+                if (d.debug) {
+                    var copyBtn = listEl.querySelector('.smbq-copy-debug');
+                    if (copyBtn) copyBtn.addEventListener('click', function(){
+                        var text = JSON.stringify(d.debug, null, 2);
+                        function reset(label){ setTimeout(function(){ copyBtn.textContent = label || '复制调试信息'; }, 1600); }
+                        function done(){ copyBtn.textContent = '已复制 ✓'; reset('复制调试信息'); }
+                        function fail(){ copyBtn.textContent = '复制失败，请长按上方文字'; reset('复制调试信息'); }
+                        function fallback(){
+                            try {
+                                var ta = document.createElement('textarea');
+                                ta.value = text;
+                                ta.setAttribute('readonly', '');
+                                ta.style.position = 'fixed';
+                                ta.style.top = '-1000px';
+                                ta.style.left = '-1000px';
+                                document.body.appendChild(ta);
+                                ta.focus();
+                                ta.select();
+                                if (ta.setSelectionRange) ta.setSelectionRange(0, text.length);
+                                var ok = document.execCommand && document.execCommand('copy');
+                                document.body.removeChild(ta);
+                                if (ok) done(); else fail();
+                            } catch(e) { fail(); }
+                        }
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(text).then(done).catch(function(){ fallback(); });
+                        } else {
+                            fallback();
+                        }
+                    });
+                }
+                return;
+            }
+            var items = (d.items || []);
+            smbqItemsCache = items;
+            if (items.length === 0) {
+                // 后端会给出 emptyHint：区分「共享名/路径不对」与「真没有视频文件」，
+                // 不再一律显示「此目录下没有内容」——那句会把连接失败也糊成「没内容」。
+                listEl.innerHTML = '<div class="modal-empty">' + escapeHtml(d.emptyHint || '此目录下没有内容') + '</div>';
+                return;
+            }
+            listEl.innerHTML = items.map(function(item){
+                var safeName = escapeHtml(item.name);
+                if (item.isDir) {
+                    return '<div class="dir-item" data-dir-path="' + escapeHtml(item.path) + '">' +
+                        '<img class="dir-item-icon" src="/icons/folder.png" alt="">' +
+                        '<span class="dir-item-name">' + safeName + '</span>' +
+                        '<img class="dir-item-arrow" src="/icons/chevron_right_128dp.png" alt=">">' +
+                    '</div>';
+                }
+                return '<div class="smbq-file" data-file-path="' + escapeHtml(item.path) + '" data-file-name="' + safeName + '">' +
+                    '<img class="dir-item-icon" src="/icons/video_library_128dp.png" alt="">' +
+                    '<span class="dir-item-name">' + safeName + '</span>' +
+                    '<span class="smbq-play">▶ 播放</span>' +
+                '</div>';
+            }).join('');
+            $$('.dir-item', listEl).forEach(function(el){
+                el.addEventListener('click', function(){
+                    // 共享名留空时列出的是「共享列表」，此时每个 dir-item 其实是一个共享名；
+                    // 旧逻辑把它当 path 拼在空 share 后面，会生成 smb://host/Share/ 这种错误 URL，
+                    // Windows 会报「登录失败或拒绝访问」。这里把第一段路径提升为 share。
+                    if (!smbqCreds.share) {
+                        smbqCreds.share = el.dataset.dirPath;
+                        openSmbQuickBrowse('');
+                    } else {
+                        openSmbQuickBrowse(el.dataset.dirPath);
+                    }
+                });
+            });
+            $$('.smbq-file', listEl).forEach(function(el){
+                el.addEventListener('click', function(){
+                    playSmbQuickVideo({ path: el.dataset.filePath, name: el.dataset.fileName });
+                });
+            });
+        })
+        .catch(function(){
+            if (rid !== smbqRequestId) return;
+            listEl.innerHTML = '<div class="modal-error">连接失败，请检查地址、共享名与账号</div>';
+        });
+}
+
+function playSmbQuickVideo(item) {
+    // 用当前 SMB 目录的视频列表作为播放列表（顺序/随机挑下一部）
+    libSmbQuickItems = smbqItemsCache.filter(function(it){ return it && !it.isDir; });
+    closeSmbQuickBrowse();
+    libPlay(item);
 }
 
 // ─── Library Edit Path Browser ─────────────────────────────
@@ -4531,6 +4963,7 @@ function initLibraryPage() {
     b = $('libBtnFolder'); if (b) b.addEventListener('click', libOpenFolder);
     b = $('libBtnAxis'); if (b) b.addEventListener('click', libOpenAxis);
     b = $('libBtnClear'); if (b) b.addEventListener('click', libClearAll);
+    initSmbQuick();
     // 设置页「OSR 轴设置」面板里的入口按钮：与上面「轴设置」共用同一个弹窗
     b = $('btnOpenAxisModal');
     if (b && b.dataset.bound !== '1') { b.dataset.bound = '1'; b.addEventListener('click', libOpenAxis); }
@@ -4599,6 +5032,7 @@ function libRootLabel(rootPath) {
 // path 为空串 = 手机存储根 / 已授权目录根
 // enteredLabel 非 null 时表示「进入了一个子目录」，压入浏览栈
 function libLoadFolder(path, enteredLabel) {
+    libSmbQuickItems = [];   // 回到本地浏览，SMB 快捷列表不再作为播放列表
     var cur = String(path || '');
     if (libStack.length === 0) {
         libStack = [{ label: libRootLabel(cur), path: cur }];
@@ -4796,12 +5230,14 @@ var libFrameLoaded = false;
 var libFrameBlanking = false;        // 本次 load 属于「退出播放器去空白」那一次
 var libNowPlaying = '';              // 播放卡里当前显示的片名（空 = 没在播）
 var libPlayMode = 'order';           // 播放器上报的播放模式：loop / order / shuffle
+var libSmbQuickItems = [];           // SMB 快捷浏览当前目录的视频列表（供「顺序/随机」挑下一部）；为空则用本地列表
 
 /** 把当前目录的视频列表送给内嵌播放器，供「顺序 / 随机」播放挑下一部。 */
 function libPushPlaylist() {
     var frame = $('libFrame');
     if (!frame || !frame.contentWindow) return;
-    var vids = (libItemsCache || []).filter(function (it) { return it && !it.isDir; });
+    var source = (libSmbQuickItems && libSmbQuickItems.length) ? libSmbQuickItems : (libItemsCache || []);
+    var vids = source.filter(function (it) { return it && !it.isDir; });
     var list = vids.map(function (it) {
         return { key: libPlayKey(it), title: String((it && it.name) || '') };
     });
@@ -4810,7 +5246,8 @@ function libPushPlaylist() {
 
 /** 播放器播完一部后请求换片（顺序 / 随机模式下由 iframe 发来）。 */
 function libPlayByKey(key, title) {
-    var vids = (libItemsCache || []).filter(function (it) { return it && !it.isDir; });
+    var source = (libSmbQuickItems && libSmbQuickItems.length) ? libSmbQuickItems : (libItemsCache || []);
+    var vids = source.filter(function (it) { return it && !it.isDir; });
     for (var i = 0; i < vids.length; i++) {
         if (libPlayKey(vids[i]) === String(key)) { libPlay(vids[i]); return; }
     }

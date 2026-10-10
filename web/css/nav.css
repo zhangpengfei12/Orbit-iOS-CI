@@ -123,3 +123,32 @@
     padding:0 18px 12px;
   }
 }
+
+/* ─── 7. 安全区：子页顶栏「返回」避开状态栏 / 刘海 / 挖孔 ─────────────
+   v2.7.35：主题是 android:windowFullscreen=true，WebView 视口顶到屏幕最上沿，
+   刘海屏 / 挖孔屏 / 状态栏偏高的机型会把顶栏的「返回」按在下面，手指点不到
+   （尤其从首页磁贴进的二级页）。这里按首页 .hm-topbar 的同款写法补安全区：
+     · 顶栏 padding-top 加 env(safe-area-inset-top)，高度跟着一起涨；
+     · 内容区底部补 env(safe-area-inset-bottom)，开了 cover 后不被虚拟导航键压住；
+     · 蓝牙设备全屏页（.bt-dev-head）同样下移。
+   ⚠ 前提：index.html 的 viewport 必须带 viewport-fit=cover，否则 env() 恒为 0。
+   ⚠ 本段必须留在文件末尾：上面 @media(max-width:860px) 里也写了 .header 的
+     padding，同特异性下后写的胜出，放在前面会被窄屏规则覆盖掉安全区补偿。 */
+.header{
+  padding:calc(12px + env(safe-area-inset-top)) 20px 12px;
+  height:calc(64px + env(safe-area-inset-top));
+}
+@media(max-width:860px){
+  .header{
+    padding:calc(8px + env(safe-area-inset-top)) 14px 8px;
+    height:calc(56px + env(safe-area-inset-top));
+  }
+}
+
+.tab-content{
+  padding-bottom:calc(12px + env(safe-area-inset-bottom));
+}
+
+.bt-dev-head{
+  padding-top:calc(6px + env(safe-area-inset-top));
+}

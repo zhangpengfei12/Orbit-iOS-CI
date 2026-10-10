@@ -79,22 +79,28 @@
     background:rgba(47,183,232,.10);
 }
 
-/* ---------- 三个功能按钮 ---------- */
+/* ---------- 四个功能按钮：连设备 / 打开文件夹 / SMB / 轴设置（一行四等分） ----------
+   2026-10-08：新增 SMB 按钮后仍是 3 列 grid，第四个按钮被挤到第二行、被下方工具行遮挡，
+   表现为「点 SMB 没反应」。改 4 列 + 文案精简 + 字号 clamp，保证任何屏宽都在同一行。 */
 .lib-actions{
     display:grid;
-    grid-template-columns:repeat(3,1fr);
-    gap:10px;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:8px;
     margin-top:14px;
 }
 .lib-btn{
     height:44px;
-    padding:0 6px;
+    padding:0 4px;
     border-radius:8px;
     border:1px solid rgba(255,255,255,.10);
     background:rgba(255,255,255,.06);
     color:#dce8ee;
-    font-size:15px;
+    font-size:clamp(12px,3.5vw,14px);
     font-weight:600;
+    /* 一行四等分：文字不换行，过长省略，绝不把按钮撑到第二行 */
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
     font-family:inherit;
     cursor:pointer;
     transition:background .18s,border-color .18s,color .18s;
@@ -110,6 +116,18 @@
     background:rgba(47,183,232,.20);
     border-color:rgba(47,183,232,.45);
     color:#eaf7ff;
+}
+
+/* 提示条：无脚本时 AI 自动生成说明 */
+.lib-hint{
+    margin-top:12px;
+    padding:10px 12px;
+    border-radius:10px;
+    background:rgba(47,183,232,.12);
+    border:1px solid rgba(47,183,232,.25);
+    color:#c2e6f3;
+    font-size:13px;
+    line-height:1.55;
 }
 
 /* ---------- 视频列表 ---------- */

@@ -2,16 +2,18 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1.0,minimum-scale=1.0,user-scalable=no">
+<!-- v2.7.35：补 viewport-fit=cover —— 没有它 env(safe-area-inset-*) 恒为 0，
+     顶栏返回键就避不开状态栏 / 刘海 / 挖孔（首页 home.html 早已是这套写法）。 -->
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1.0,minimum-scale=1.0,user-scalable=no,viewport-fit=cover">
 <title>Orbit</title>
-<link rel="stylesheet" href="/css/common.css?v=20261001s">
-<link rel="stylesheet" href="/css/app.css?v=20261001s">
-<link rel="stylesheet" href="/css/nav.css?v=20261001s">
-<link rel="stylesheet" href="/css/osr.css?v=20261001s">
-<link rel="stylesheet" href="/css/lib.css?v=20261001s">
-<link rel="stylesheet" href="/css/cyber-base.css?v=20261001s">
-<link rel="stylesheet" href="/css/touchpad.css?v=20261001s">
-<link rel="stylesheet" href="/css/buttons.css?v=20261001s">
+<link rel="stylesheet" href="/css/common.css?v=20261010a">
+<link rel="stylesheet" href="/css/app.css?v=20261010a">
+<link rel="stylesheet" href="/css/nav.css?v=20261010a">
+<link rel="stylesheet" href="/css/osr.css?v=20261010a">
+<link rel="stylesheet" href="/css/lib.css?v=20261010a">
+<link rel="stylesheet" href="/css/cyber-base.css?v=20261010a">
+<link rel="stylesheet" href="/css/touchpad.css?v=20261010a">
+<link rel="stylesheet" href="/css/buttons.css?v=20261010a">
 </head>
 <body>
 <div class="app">
@@ -75,9 +77,12 @@
             <!-- 状态条：默认隐藏（不再显示「未选择视频」占位），选中影片后显示片名 -->
             <div class="lib-now" id="libNow" style="display:none"></div>
 
+            <!-- 四个主功能按钮：一行四等分（.lib-actions 已是 repeat(4,...)，见 lib.css / cyber-base.css）。
+                 文案精简 + 字号 clamp，保证窄屏也不会把按钮挤到第二行（曾因 3 列布局导致 SMB 按钮换行被遮挡、点不到）。 -->
             <div class="lib-actions">
-                <button class="lib-btn" type="button" id="libBtnConnect">连接设备</button>
-                <button class="lib-btn lib-btn--primary" type="button" id="libBtnFolder">选择文件夹</button>
+                <button class="lib-btn" type="button" id="libBtnConnect">连设备</button>
+                <button class="lib-btn lib-btn--primary" type="button" id="libBtnFolder">打开文件夹</button>
+                <button class="lib-btn" type="button" id="libBtnSmb" title="SMB 网络共享">SMB</button>
                 <button class="lib-btn" type="button" id="libBtnAxis">轴设置</button>
             </div>
 
@@ -86,6 +91,10 @@
                  该目录无视频但有子文件夹时自动回退显示子文件夹（见 app.js renderLibList）。 -->
             <div class="lib-actions lib-actions--tools">
                 <button class="lib-btn lib-btn--danger" type="button" id="libBtnClear">一键清除</button>
+            </div>
+
+            <div class="lib-hint">
+                当您的视频没有脚本时，AI会自动生成脚本来动，但是同步效果一般，想要同步效果好，可以在首页找，手工编辑脚本，自己编辑，您可以去其它地方找一些别人编辑好的资源使用。
             </div>
 
             <div class="lib-sec">
@@ -328,6 +337,12 @@
                         <h3>DeoVR 连接</h3>
                         <div id="deovrPanel">
                             <div class="dash-row"><span class="dash-label">状态</span><span class="dash-value" id="dashDeovrStatus">--</span></div>
+                            <!-- 2026-10-08：VR 链路真实化后新增。头显自己播画面，
+                                 本 App 只做脚本桥，所以需要把「影片 / 进度 / 脚本是否命中」摆出来，
+                                 否则用户对不上片子也不知道脚本有没有加载成功。 -->
+                            <div class="dash-row"><span class="dash-label">当前影片</span><span class="dash-value" id="dashDeovrTitle">--</span></div>
+                            <div class="dash-row"><span class="dash-label">播放进度</span><span class="dash-value" id="dashDeovrTime">--</span></div>
+                            <div class="dash-row"><span class="dash-label">随播脚本</span><span class="dash-value" id="dashDeovrScript">--</span></div>
                             <div class="form-group deovr-ip-row" style="margin-top:12px">
                                 <label class="form-label">IP 地址</label>
                                 <div class="input-with-btn">
@@ -341,6 +356,69 @@
                                 <button class="tool-btn" id="btnHereSphereConnect">连接 HereSphere</button>
                                 <button class="tool-btn ob-btn--danger" id="btnDeovrDisconnect">断开</button>
                                 </div>
+                            </div>
+                            <div class="panel-desc" style="margin-top:12px">
+                                <b>头显侧前提：</b>① 头显与手机连同一个 Wi‑Fi；② 在 DeoVR 设置里打开
+                                <b>Remote control</b>（用 HereSphere 则开 <b>Timestamp Server</b>）；
+                                ③ <b>先在头显里打开一个视频</b> —— DeoVR 只在播放器内才接受连接。
+                            </div>
+                            <div class="panel-desc" style="margin-top:8px">
+                                <b>分工说明：</b>画面由头显自己播（这是 DeoVR / HereSphere /
+                                MultiFunPlayer 一类方案的通行做法），本 App 只做「脚本桥」：
+                                拿头显的时间轴当统一时钟，按影片名自动匹配同名
+                                <code>.funscript</code> 来驱动设备。所以脚本要放在手机端找得到的地方
+                                ——应用私有脚本目录，或已授权的本地视频目录。
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- VR 蓝牙时间桥 -->
+                    <div class="settings-section" style="margin-top:16px" id="vrbtSection">
+                        <h3>蓝牙连接</h3>
+                        <div id="vrbtPanel">
+                            <div class="dash-row"><span class="dash-label">状态</span><span class="dash-value" id="dashVrbtStatus">--</span></div>
+                            <div class="dash-row"><span class="dash-label">对端</span><span class="dash-value" id="dashVrbtPeer">--</span></div>
+                            <div class="dash-row"><span class="dash-label">传输</span><span class="dash-value" id="dashVrbtTransport">--</span></div>
+
+                            <div class="form-group" style="margin-top:12px">
+                                <label class="form-label">本机角色</label>
+                                <select class="form-input" id="vrbtRole">
+                                    <option value="sink">接收时间轴（手机驱动设备，推荐）</option>
+                                    <option value="source">广播时间轴（在 VR 一体机上用）</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group" id="vrbtSourceRow" style="display:none;margin-top:12px">
+                                <label class="form-label">本机 DeoVR 地址</label>
+                                <input class="form-input" id="vrbtSourceHost" placeholder="127.0.0.1" value="127.0.0.1">
+                            </div>
+
+                            <div id="vrbtSinkRow">
+                                <div class="scan-action-buttons" style="margin-top:12px">
+                                    <button class="tool-btn" id="btnVrbtScan">扫描设备</button>
+                                    <span class="save-hint" id="vrbtScanHint"></span>
+                                </div>
+                                <div class="vrbt-devlist" id="vrbtDevList"></div>
+                            </div>
+
+                            <div class="dash-actions" style="margin-top:12px">
+                                <div class="scan-action-buttons">
+                                    <button class="tool-btn" id="btnVrbtStart">开始</button>
+                                    <button class="tool-btn ob-btn--danger" id="btnVrbtDisconnect">断开</button>
+                                </div>
+                            </div>
+
+                            <div class="panel-desc" style="margin-top:12px">
+                                <b>为什么蓝牙需要 Orbit 也在头显上：</b>DeoVR / HereSphere 只有
+                                Wi‑Fi 接口（TCP 23554），<b>官方没有蓝牙通道</b>；安卓的蓝牙网络共享又要
+                                系统级权限，普通 App 拿不到。所以手机没法用蓝牙直连头显里的 DeoVR。
+                                可行做法是头显上也装 Orbit：它用 <b>本机回环 127.0.0.1</b> 连同机的
+                                DeoVR 取时间轴，再通过蓝牙广播给手机。
+                            </div>
+                            <div class="panel-desc" style="margin-top:8px">
+                                <b>怎么用：</b>① 头显装 Orbit，本页角色选「广播时间轴」后点开始（头显需开蓝牙、
+                                DeoVR 已开 Remote control 且正在播视频）；② 手机角色选「接收时间轴」→
+                                扫描 → 点列表里的头显连接。<b>全程不需要 Wi‑Fi 和路由器</b>，IP 也不用填。
                             </div>
                         </div>
                     </div>
@@ -1562,13 +1640,73 @@
 
 </div>
 
-<script src="/js/custom-select.js?v=20261001s"></script>
-<script src="/js/license.js?v=20261001s"></script>
+    <!-- SMB 快捷浏览：配置弹窗（放在「选择文件夹」按钮旁，直连共享选视频） -->
+    <div class="modal-overlay" id="smbQuickConfigModal" style="display:none">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 class="modal-title">SMB 网络共享</h3>
+                <button class="modal-close" id="btnSmbQuickConfigClose" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="panel-desc">填写 SMB/CIFS 共享信息，连接后即可浏览远程视频。同名 <code>.funscript</code> 脚本会自动随视频加载。</p>
+                <div class="form-group">
+                    <label class="form-label">主机地址（IP）</label>
+                    <input class="form-input" id="smbqHost" placeholder="192.168.1.100">
+                </div>
+                            <div class="form-group">
+                                <label class="form-label">共享名（可留空）</label>
+                                <input class="form-input" id="smbqShare" placeholder="留空则列出该主机的所有共享">
+                            </div>
+                <div class="form-group">
+                    <label class="form-label">
+                        <input type="checkbox" id="smbqAnonymous"> 匿名访问（无需账号密码）
+                    </label>
+                </div>
+                <div class="form-group smbq-cred">
+                    <label class="form-label">用户名</label>
+                    <input class="form-input" id="smbqUser" placeholder="可选">
+                </div>
+                <div class="form-group smbq-cred">
+                    <label class="form-label">密码</label>
+                    <input class="form-input" id="smbqPass" type="password" placeholder="可选">
+                </div>
+                <div class="form-group smbq-cred">
+                    <label class="form-label">域（可选）</label>
+                    <input class="form-input" id="smbqDomain" placeholder="留空自动用本机名「.」，或填 Windows 主机名">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <span class="modal-error" id="smbqError" style="display:none"></span>
+                <button class="tool-btn" id="btnSmbQuickConfigCancel" type="button">取消</button>
+                <button class="btn-save" id="btnSmbQuickConnect" type="button">连接</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SMB 快捷浏览：目录/视频浏览弹窗 -->
+    <div class="modal-overlay" id="smbQuickBrowseModal" style="display:none">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 class="modal-title">SMB 共享目录</h3>
+                <button class="modal-close" id="btnSmbQuickBrowseClose" type="button">&times;</button>
+            </div>
+            <div class="modal-breadcrumb" id="smbqBreadcrumb"></div>
+            <div class="modal-body" id="smbqList">
+                <div class="spinner">连接中...</div>
+            </div>
+            <div class="modal-footer">
+                <span class="modal-path-display" id="smbqPath">/ (根目录)</span>
+            </div>
+        </div>
+    </div>
+
+<script src="/js/custom-select.js?v=20261010a"></script>
+<script src="/js/license.js?v=20261010a"></script>
 <!-- 试用 / 卡密激活：必须早于业务脚本，守卫才能在功能点击之前生效 -->
-<script src="/js/changelog.js?v=20261001s"></script>
-<script src="/js/app.js?v=20261001s"></script>
-<script src="/js/osr.js?v=20261001s"></script>
-<script src="/js/touchpad.js?v=20261001s"></script>
-<script src="/js/manual_record.js?v=20261001s"></script>
+<script src="/js/changelog.js?v=20261010a"></script>
+<script src="/js/app.js?v=20261010a"></script>
+<script src="/js/osr.js?v=20261010a"></script>
+<script src="/js/touchpad.js?v=20261010a"></script>
+<script src="/js/manual_record.js?v=20261010a"></script>
 </body>
 </html>

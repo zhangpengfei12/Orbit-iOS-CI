@@ -64,7 +64,10 @@ final class OrbitServer {
         // Swifter 的路由是按「段」精确匹配的，多级通配不可靠，所以用 notFoundHandler 兜底，
         // 由我们自己做路径清洗 —— 顺手挡掉 ../ 目录穿越。
         server.notFoundHandler = { [weak self] request in
-            self?.serveFile(request.path) ?? .notFound
+            // 视频流走独立分发：路径段数不固定（SMB 相对路径可能有多层），
+            // Swifter 的按段精确匹配注册不了，只能在这里前缀判断后手工接管。
+            if let r = ApiVideo.handle(request) { return r }
+            return self?.serveFile(request.path) ?? .notFound
         }
 
         // API 路由：web 实际调用的 /api/* 端点集中注册（见 ApiRouter.swift 及各分组文件）

@@ -2,12 +2,12 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1.0,minimum-scale=1.0,user-scalable=no,viewport-fit=cover">
 <title>Orbit</title>
-<link rel="stylesheet" href="/css/common.css?v=20261001s">
-<link rel="stylesheet" href="/css/player.css?v=20261001s">
-<link rel="stylesheet" href="/css/cyber-base.css?v=20261001s">
-<link rel="stylesheet" href="/css/buttons.css?v=20261001s">
+<link rel="stylesheet" href="/css/common.css?v=20261010a">
+<link rel="stylesheet" href="/css/player.css?v=20261010a">
+<link rel="stylesheet" href="/css/cyber-base.css?v=20261010a">
+<link rel="stylesheet" href="/css/buttons.css?v=20261010a">
 </head>
 <body>
 
@@ -17,7 +17,7 @@
         <!-- 一键冲刺：只给脚本驱动的 L0 主轴加速；旋转/俯卧补偿等其它轴按原速继续。
              放在顶栏「返回」右侧而不是右边 —— 右上角是同步胶囊 .sync 的地盘，会压住按钮。 -->
         <div class="topbar-actions">
-            <button class="topbar-btn" id="dashBtn" type="button" title="一键冲刺：让 L0 主轴加速，其它轴保持原样">冲刺</button>
+            <button class="topbar-btn" id="dashBtn" type="button" title="一键冲刺：点一下进档位 1（120 次/分），再点档位 2 / 3，第 4 下关闭">冲刺</button>
         </div>
         <div class="title" id="videoTitle"></div>
     </div>
@@ -213,9 +213,9 @@
 <!-- 脚本编辑：轻提示 -->
 <div id="mrToast" class="mr-toast" style="display:none"></div>
 
-<script src="/js/custom-select.js?v=20261001s"></script>
-<script src="/js/license.js?v=20261001s"></script>
+<script src="/js/custom-select.js?v=20261010a"></script>
+<script src="/js/license.js?v=20261010a"></script>
 <!-- 试用 / 卡密激活：必须早于 player.js，守卫才能在播放点击之前生效 -->
-<script src="/js/player.js?v=20261001s"></script>
+<script src="/js/player.js?v=20261010a"></script>
 </body>
 </html>

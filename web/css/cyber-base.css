@@ -220,8 +220,8 @@ body::after{
     box-shadow:0 0 14px -6px rgba(239,68,68,.5)!important;
 }
 
-/* 视频库三按钮 */
-.lib-actions{grid-template-columns:repeat(3,1fr)}
+/* 视频库四按钮：连设备 / 打开文件夹 / SMB / 轴设置，一行四等分 */
+.lib-actions{grid-template-columns:repeat(4,minmax(0,1fr))}
 .lib-btn{
     height:46px;
     border:1px solid rgba(155,92,255,.34);
@@ -306,7 +306,7 @@ select.form-input{
 }
 .seg-btn:not(.active):hover{background:rgba(255,255,255,.06);color:#dceaff}
 
-/* 连接卡片（蓝牙/WiFi/USB 选择） */
+/* 连接卡片（蓝牙/WiFi 选择） */
 .conn-method{
     border:1px solid rgba(155,92,255,.26);
     background:linear-gradient(150deg, rgba(32,21,60,.5), rgba(11,7,24,.6));

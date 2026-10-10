@@ -13,7 +13,7 @@ settings:
   # iOS 版本线独立于安卓：安卓走 2.7.x，iOS 从 1.0.x 起步。
   # 这样 iOS 迭代不会污染安卓的 versionCode / changelog，也不会误触发安卓发版。
   # build 号由 CI 用 git rev-list --count HEAD 自增（TestFlight 只要求单调递增）。
-  MARKETING_VERSION: 1.0.0
+  MARKETING_VERSION: 1.0.1
   SWIFT_VERSION: "5.9"
   TARGETED_DEVICE_FAMILY: "1,2"
 
@@ -24,6 +24,15 @@ packages:
   Swifter:
     url: https://github.com/httpswift/swifter
     from: "1.5.0"
+  # SMB 网络共享：AMSMB2 是 libsmb2 的 Swift 封装，支持 SMB2/SMB3。
+  # ⚠ 授权协议硬约束：源码 MIT，但它**静态链接 libsmb2（LGPL v2.1）**，
+  #   因此整体按 LGPL v2.1 处理；AMSMB2 的 Package.swift 已把 product 声明为
+  #   `.library(type: .dynamic)`，Xcode 会自动 embed & sign —— **不要**改成静态链接，
+  #   否则不符合 LGPL 的动态链接要求，上架 App Store 会有合规风险。
+  # ⚠ 版本要求：该包 Package.swift 是 swift-tools-version 6.0，需 Xcode 16+ 工具链解析。
+  AMSMB2:
+    url: https://github.com/amosavian/AMSMB2
+    from: "3.0.0"
 
 targets:
   Orbit:
@@ -61,3 +70,6 @@ targets:
     dependencies:
       - package: Swifter
         product: Swifter
+      # 动态库产品：Xcode 自动完成 Embed & Sign，无需手写 embed 阶段
+      - package: AMSMB2
+        product: AMSMB2

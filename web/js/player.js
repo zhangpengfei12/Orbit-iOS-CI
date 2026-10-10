@@ -442,6 +442,22 @@ function isBg() { return nativeBg || document.hidden; }
     // 旧实现用 osrSyncAutoTried 一次置位就不再重试，首屏那次探测若失败，
     // 之后每次点播放都不会再开同步，用户看到的就是「脚本没跑」。
 
+    /* ===== 无脚本自动生成（v2.7.32）=====
+       视频没有对应 .funscript 时，自动用「AI生成脚本」那套本地算法（真解码音视频）
+       生成一份，生成完立刻按脚本跟随，并落盘——下次打开直接命中，不用再算一遍。
+       genState 取值：'' 未触发 / 'starting' 已投递 / 'running' 生成中 /
+                     'done' 已生成待重载 / 'busy' 生成器被别人占用 /
+                     'fail' 失败 / 'skip' 本机不可生成（SMB 等）。
+       ⚠ 去重是刚需：<video> 的 play 事件每次暂停恢复都会重跑 startScriptSync()，
+       loadOsrStatus() 还每 3 秒探一次，没有 genKeyFor 这道闸就会重复投递整段解码任务。 */
+    var genState = '';
+    var genKeyFor = '';         // 已发起生成所针对的视频 key
+    var genId = '';             // 后端回的真实地址（可直接喂给生成器）
+    var genTimer = null;        // 轮询句柄
+    var genMsg = '';            // 覆盖到同步胶囊上的文案
+    var genLastPoints = null;   // 兜底内存注入用的 L0 动作点
+    var genLastDuration = 0;    // 兜底注入时补进 metadata.duration
+
     function postJson(url, body) {
         return fetch(url, {
             method: 'POST',
@@ -483,16 +499,176 @@ function isBg() { return nativeBg || document.hidden; }
     function ensureScriptLoaded() {
         // 手录模式：用户自己在控制设备，绝不能加载/随播视频脚本，否则会和手动指令抢同一条串口。
         if (IS_MANUALREC) return Promise.resolve(false);
+        // ★ 闸门：进入自动生成流程后锁住探活。play 事件与 3 秒轮询都会反复调到这里，
+        // 不短路的话会重复投递解码任务，还会把 osrScriptTries 迅速啃到 4 而彻底不再重试。
+        // 生成完成后由 applyGenDone() 主动解锁重来一次。
+        if (genState === 'starting' || genState === 'running' || genState === 'done') {
+            return Promise.resolve(false);
+        }
+        // 已判定「这条路走不通」：别再发无谓请求，直接把上次的结论显示在胶囊上。
+        if (genState === 'busy' || genState === 'fail' || genState === 'skip') {
+            updateSyncChip();
+            return Promise.resolve(false);
+        }
         if (osrScriptLoaded || !videoName) return Promise.resolve(osrScriptLoaded);
         if (osrScriptTries >= 4) return Promise.resolve(false);
         osrScriptTries++;
         return postJson('/api/osr/funscript-auto', { key: videoName, root: fsRoot, rel: fsRel })
             .then(function(j) {
             osrScriptInfo = j || null;
+            // 未激活时 handleApi 会拦下整个 /api/osr/*，连 source 都拿不到，
+            // 前端必须能给得出人话，否则胶囊上只剩一个 'no_resp'。
+            if (j && j.code === 'license_blocked') {
+                genState = 'skip';
+                genMsg = '未激活，脚本跟随不可用';
+                osrScriptLoaded = false;
+                updateSyncChip();
+                return false;
+            }
             osrScriptLoaded = !!(j && j.ok);
             if (j && j.names && j.names.length) osrScriptNames = j.names;
+            if (!osrScriptLoaded && j) {
+                genId = j.genId || '';
+                if (j.canGenerate && genId) {
+                    startAutoGenerate();
+                } else {
+                    genState = 'skip';
+                    genMsg = genSkipText(j.genReason || '');
+                }
+            }
             updateSyncChip();
             return osrScriptLoaded;
+        });
+    }
+
+    // 不可自动生成时给一句说得清原因的文案，别只显示「未加载脚本」
+    function genSkipText(reason) {
+        if (reason === 'smb') return 'SMB 视频不支持自动生成（生成器读不了 smb://，请用本地或 SAF 目录）';
+        if (reason === 'no_key') return '路径未解析出视频，无法自动生成';
+        if (reason === 'unresolved') return '视频地址未解析成功，无法自动生成';
+        return '该视频不支持自动生成';
+    }
+
+    // ① 投递生成任务：每部片子只投一次
+    function startAutoGenerate() {
+        if (IS_MANUALREC) return;                       // 手录模式双重保险
+        if (genState === 'starting' || genState === 'running' || genState === 'done') return;
+        if (genKeyFor === videoName &&
+            (genState === 'busy' || genState === 'fail' || genState === 'skip')) return;
+        genState = 'starting';
+        genKeyFor = videoName;
+        genMsg = '正在准备生成脚本…';
+        updateSyncChip();
+        postJson('/api/osr/funscript-gen/start', { id: genId }).then(function(j) {
+            if (j && j.ok) { enterRunning(); return; }
+            if (!j) { genState = 'fail'; genMsg = '生成脚本失败（服务未响应）'; updateSyncChip(); return; }
+            if (j.code === 'license_blocked') {
+                genState = 'skip'; genMsg = '未激活，脚本跟随不可用'; updateSyncChip(); return;
+            }
+            if (j.error === 'already_running') {
+                // id 对得上 = 同一部片子（页面重载 / 重复进入），接管它的进度即可；
+                // 对不上 = 「AI生成脚本」页正在跑，是用户手动点的，绝不能抢、也不能取消。
+                if (j.busyId && j.busyId === genId) { enterRunning(); return; }
+                genState = 'busy';
+                genMsg = '生成器忙（AI生成脚本正在运行），本次不自动跟脚本';
+                updateSyncChip();
+                return;
+            }
+            genState = 'fail';
+            genMsg = '生成脚本失败（' + (j.error || '未知原因') + '）';
+            updateSyncChip();
+        });
+    }
+
+    function enterRunning() {
+        genState = 'running';
+        if (genTimer) { clearTimeout(genTimer); genTimer = null; }
+        pollGenStatus();                                // 立刻拉一次，别让用户干等第一个间隔
+    }
+
+    // ② 轮询进度：600ms 一次（生成可达数分钟，太密浪费、太疏看着卡）
+    function pollGenStatus() {
+        if (genState !== 'running') return;
+        postJson('/api/osr/funscript-gen/status', {}).then(function(st) {
+            if (genState !== 'running') return;         // 期间视频已被切走 → 停手
+            if (!st) { genTimer = setTimeout(pollGenStatus, 1500); return; }
+            if (st.running) {
+                genMsg = '正在生成脚本 ' + Math.max(0, Math.min(100, st.percent | 0)) + '%';
+                updateSyncChip();
+                genTimer = setTimeout(pollGenStatus, 600);
+                return;
+            }
+            var phase = st.phase || '';
+            if (st.ok && phase === 'done') {
+                genLastDuration = st.duration || 0;
+                if (!st.points) {                       // 轻量 status 没带点，兜底注入前先补一次
+                    postJson('/api/osr/funscript-gen/status', { full: 1 }).then(function(f) {
+                        if (f) genLastPoints = f.points || null;
+                        applyGenDone();
+                    });
+                } else { genLastPoints = st.points; applyGenDone(); }
+                return;
+            }
+            if (phase === 'cancelled') { genState = ''; genKeyFor = ''; updateSyncChip(); return; }
+            genState = 'fail';
+            genMsg = '生成脚本失败（' + (st.error || st.message || '未知原因') + '）';
+            updateSyncChip();
+        });
+    }
+
+    // ③ 生成完成：主路径——清掉本地缓存让 funscript-auto 重新读回刚落盘的脚本 → play
+    function applyGenDone() {
+        genState = 'done';
+        genMsg = '脚本已生成，正在加载…';
+        updateSyncChip();
+        osrScriptLoaded = false;      // ★ 不置 false，ensureScriptLoaded 会被缓存短路
+        osrScriptTries = 0;           // ★ 生成期间它早就被啃到 4 了
+        osrScriptInfo = null;
+        osrScriptNames = [];
+        postJson('/api/osr/funscript-auto', { key: videoName, root: fsRoot, rel: fsRel })
+            .then(function(j) {
+            osrScriptInfo = j || null;
+            osrScriptLoaded = !!(j && j.ok);
+            if (j && j.names && j.names.length) osrScriptNames = j.names;
+            if (osrScriptLoaded) {
+                genState = ''; genKeyFor = ''; genMsg = '';
+                osrScriptTries = 0;
+                // 生成花了几分钟，这段时间用户很可能已经暂停了；
+                // 暂停态下不该把时钟开起来（否则画面停着、设备还在动）。
+                if (V && V.paused && !isPlaybackGoing()) { updateSyncChip(); return null; }
+                return postJson('/api/osr/script', { action: 'play' }).then(function(r) {
+                    if (r && r.ok) osrSyncEnabled = true;
+                    return r;
+                });
+            }
+            return injectGenFallback();                 // ④ 文件读不回来时的兜底
+        }).then(function() { updateSyncChip(); reportPlayState(); });
+    }
+
+    // ④ 兜底：把 status.points 组装成 funscript 文本直接塞进 OsrManager（不经文件）
+    function injectGenFallback() {
+        var pts = genLastPoints;
+        if (!pts || !pts.length) {
+            genState = 'fail';
+            genMsg = '脚本已生成但读不回来，请重进一次';
+            return Promise.resolve(false);
+        }
+        // ⚠ 只放根 actions（= L0）。塞进 axes[] 会让 parseFunscriptText 解析出两份 L0。
+        var text = JSON.stringify({
+            version: '1.1', inverted: false, range: 100,
+            metadata: { generator: 'Orbit ScriptRecorder', duration: genLastDuration },
+            actions: pts
+        });
+        return postJson('/api/osr/funscript', { text: text }).then(function(r) {
+            if (!(r && r.ok)) { genState = 'fail'; genMsg = '脚本加载失败'; return false; }
+            osrScriptLoaded = true;
+            osrScriptTries = 0;
+            genState = ''; genKeyFor = ''; genMsg = '';
+            if (V && V.paused && !isPlaybackGoing()) { updateSyncChip(); return true; }
+            return postJson('/api/osr/script', { action: 'play' }).then(function(p) {
+                if (p && p.ok) osrSyncEnabled = true;
+                return true;
+            });
         });
     }
 
@@ -536,6 +712,17 @@ function isBg() { return nativeBg || document.hidden; }
 
     function updateSyncChip() {
         if (!syncText) return;
+        // ★ 生成态优先：loadOsrStatus() 每 3 秒轮询会重绘胶囊，不抢先返回的话
+        //   刚画上去的「正在生成脚本 42%」立刻被下面的「未加载脚本(...)」冲掉，
+        //   表现就是进度闪一下就没了。
+        if (genState === 'starting' || genState === 'running' || genState === 'done') {
+            setSyncStatus('wait', genMsg || '正在生成脚本…', []);
+            return;
+        }
+        if (genState === 'busy' || genState === 'fail' || genState === 'skip') {
+            setSyncStatus('warn', genMsg || '无法自动跟脚本', []);
+            return;
+        }
         if (!osrScriptLoaded) {
             // 把后端给的原因显示出来：哪一级落空、各级查到几条，一眼可判
             var info = osrScriptInfo || {};
@@ -657,6 +844,13 @@ function isBg() { return nativeBg || document.hidden; }
     }
 
     function applyServerSyncStatus(data) {
+        // 生成态优先：自动生成脚本期间只显示「正在生成脚本 xx%」进度文案，
+        // 不让服务端的「轴同步中」把胶囊抢走（否则进度与同步文案交替闪）。
+        if (genState === 'starting' || genState === 'running' || genState === 'done'
+            || genState === 'busy' || genState === 'fail' || genState === 'skip') {
+            updateSyncChip();
+            return;
+        }
         var axes = normalizeAxes(data && data.loadedAxes);
         latestLoadedAxes = axes;
         if (axes.length > 0) {
@@ -1210,12 +1404,18 @@ function isBg() { return nativeBg || document.hidden; }
         syncFsIcon();
         showUI();
     };
-    document.addEventListener('fullscreenchange', syncFsIcon);
-    document.addEventListener('webkitfullscreenchange', syncFsIcon);
+    // v2.7.29：HTML5 全屏（WebChromeClient.onShowCustomView 那条路）退出后同样点亮 UI，原因同上。
+    document.addEventListener('fullscreenchange', function() { syncFsIcon(); showUI(); });
+    document.addEventListener('webkitfullscreenchange', function() { syncFsIcon(); showUI(); });
     // App 侧按返回键退出原生全屏时会回调这里，同步 UI 状态并恢复竖屏。
     window.__onNativeFullscreenExit = function() {
         fsNative = false;
         if (fsBtn) fsBtn.title = '全屏';
+        /* v2.7.29：退出原生全屏（横屏 → 竖屏）立刻把顶栏 / 控制条点亮并清掉 3s 自动淡出定时器。
+           以前只改回 fsNative 与按钮 title，UI 仍停在淡出态 —— 而淡出态的顶栏整条 pointer-events:none，
+           手指按在「← 返回」上其实是穿透到画面（只唤出一次控制条），体感就是「返回按钮点不到、不灵敏」。
+           横屏那一段没碰屏幕，退出时必然还挂着淡出态，所以只有这条路径最容易复现。 */
+        showUI();
     };
 
     // OSR 诊断面板交互
@@ -1263,34 +1463,69 @@ function isBg() { return nativeBg || document.hidden; }
         applyRate();
         showUI();
     }
-    /* ===== 一键冲刺（v2.7.28 起为「独立冲刺」=====
+    /* ===== 一键冲刺（v2.7.28 起为「独立冲刺」，v2.7.31 起为三档循环）=====
        旧版只是把脚本的采样时钟乘个倍率（/api/osr/l0-boost）：脚本某段没动作点、
        或压根没加载到 Funscript，L0 就没有目标可插值，设备直接停在原地 —— 冲刺形同虚设。
        新版「独立冲刺」：L0 完全不读脚本，改由后端按**真实时钟**做满行程往复（三角波），
-       默认 60 次/分（约 1 秒一个来回），脚本停不停、视频有没有片源，设备都一直全速动作。
-       再点一下即收；退出播放页后端 deviceReset 也会收掉，进页面时 GET 回读真实状态校正按钮态。
+       脚本停不停、视频有没有片源，设备都一直全速动作。
+       冲刺只让 L0 与旋转 / 俯卧补偿动，脚本里的其它轴（L1/L2/R0/R1/R2）保持不动。
+       三档循环：点一下 = 档位 1（120 次/分）→ 档位 2（150）→ 档位 3（180）→ 再点一下关闭。
+       退出播放页后端 deviceReset 也会收掉，进页面时 GET 回读真实状态校正按钮态。
        注意别和「倍速」混淆：倍速改的是视频播放速度（画面 + 时钟都快），冲刺只动设备、画面照常。 */
-    var DASH_SPEED = 60;   // 独立冲刺往复速度（次/分钟）
-    var DASH_AMP = 100;    // 独立冲刺行程幅度（%，100 = 满行程）
+    var DASH_LEVELS = [120, 150, 180];  // 冲刺档位速度（次/分）：下标 0/1/2 = 档位 1/2/3
+    var DASH_AMP = 100;                 // 独立冲刺行程幅度（%，100 = 满行程）
+    var dashLevel = -1;                 // 当前档位：-1 = 关闭，0/1/2 = 档位 1/2/3
+    // 冲刺档位切换的短提示：toast() 只活在脚本编辑（manualrec）那个作用域里，播放页直接调会 ReferenceError，
+    // 所以在播放页自己做一个一次性提示条，别把切换反馈也弄丢。
+    function dashTip(text) {
+        var el = document.getElementById('dashTip');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'dashTip';
+            el.style.cssText = 'position:fixed;top:86px;left:50%;transform:translateX(-50%);z-index:70;'
+                + 'background:rgba(15,23,42,.95);border:1px solid rgba(240,160,32,.5);color:#f2e2c0;'
+                + 'padding:9px 16px;border-radius:12px;font-size:14px;max-width:min(320px,80vw);'
+                + 'text-align:center;display:none';
+            document.body.appendChild(el);
+        }
+        el.textContent = text;
+        el.style.display = 'block';
+        clearTimeout(dashTip._t);
+        dashTip._t = setTimeout(function () { el.style.display = 'none'; }, 1600);
+    }
     var dashOn = false;
-    function setDashUi(on) {
+    // 提示文案跟着档位走；档位未知（后端回读速度不在三档内）时至少不会显示成「已开但没档」
+    function setDashUi(on, level) {
+        if (typeof level === 'number' && level >= 0) dashLevel = level;
         dashOn = !!on;
+        if (dashOn && dashLevel < 0) dashLevel = 0;
         if (!dashBtn) return;
         dashBtn.classList.toggle('active', dashOn);
-        dashBtn.textContent = dashOn ? '冲刺中' : '冲刺';
+        dashBtn.textContent = dashOn ? '冲刺 L' + (dashLevel + 1) : '冲刺';
         dashBtn.setAttribute('aria-pressed', dashOn ? 'true' : 'false');
+        dashBtn.title = dashOn
+            ? '档位 ' + (dashLevel + 1) + ' · ' + DASH_LEVELS[dashLevel] + ' 次/分（再点切到档位 ' + (dashLevel + 2) + '）'
+            : '一键冲刺：点一下进档位 1（120 次/分），再点档位 2 / 3，第 4 下关闭';
     }
-    function applyDash(on) {
-        setDashUi(on);
+    function applyDash(on, level, speed) {
+        setDashUi(on, level);
         // 独立冲刺：后端打开一条不依赖脚本的驱动，L0 按真实时钟满行程往复
-        postJson('/api/osr/dash-mode', { on: !!on, speed: DASH_SPEED, amp: DASH_AMP }).catch(function() {});
+        postJson('/api/osr/dash-mode', { on: !!on, speed: speed || 0, amp: DASH_AMP }).catch(function() {});
     }
-    if (dashBtn) dashBtn.onclick = function() { applyDash(!dashOn); };
+    // 四态循环：档位 1(120) → 档位 2(150) → 档位 3(180) → 关闭
+    if (dashBtn) dashBtn.onclick = function() {
+        dashLevel = (dashLevel + 1) % 4;
+        var on = dashLevel < DASH_LEVELS.length;
+        var DASH_SPEED = on ? DASH_LEVELS[dashLevel] : 0;  // 关闭时不改后端速度，收掉驱动即可
+        applyDash(on, dashLevel, DASH_SPEED);
+        dashTip(on ? '冲刺 档位 ' + (dashLevel + 1) + ' · ' + DASH_SPEED + ' 次/分' : '冲刺已关闭');
+    };
     // 进页面先把后端真实状态读回来（换片 / 刷新 / 上一页复位之后按钮态要跟设备一致）
     (function initDash() {
         if (!dashBtn) return;
         fetch('/api/osr/dash-mode').then(function(r) { return r.json(); }).then(function(j) {
-            setDashUi(!!(j && j.ok) && !!j.on);
+            // 用后端回读的速度反推档位：-1 表示不在三档内（如旧版遗留的 100 次/分），按关闭态显示
+            setDashUi(!!(j && j.ok) && !!j.on, DASH_LEVELS.indexOf(Math.round(j.speed)));
         }).catch(function() {});
     })();
     (function initRate() {
@@ -2092,10 +2327,11 @@ function isBg() { return nativeBg || document.hidden; }
             window.addEventListener('pagehide', cleanupManualRec);
 
             // 初始化
-            // 脚本编辑横屏打开（对齐参考实现）：直接走原生全屏通道（横屏 + 隐藏系统栏，
-            // Activity 已声明 configChanges 不会重建），离开时 cleanupManualRec 恢复竖屏。
-            try { if (window.OrbitPlayer && window.OrbitPlayer.setFullscreen) window.OrbitPlayer.setFullscreen(true); } catch (e) {}
+            // 脚本编辑页始终走「横屏全屏」（隐藏系统栏）。视频由原生播放器信箱式保比例渲染：
+            //   · 横屏视频 → 铺满全屏；
+            //   · 竖屏视频 → 按原视频比例居中显示（两侧留黑边），不铺满、不旋转成竖屏全屏（v2.7.37 修正）。
             mrOverlay.style.display = '';
+            try { if (window.OrbitPlayer && window.OrbitPlayer.setFullscreen) window.OrbitPlayer.setFullscreen(true); } catch (e) {}
             window.addEventListener('resize', drawWave);
             bindSlider();
             setL0(50, true);
@@ -2134,6 +2370,22 @@ function isBg() { return nativeBg || document.hidden; }
         if (useNative) { try { window.OrbitPlayer.release(); } catch (e) { } }
         // 离开播放页把「一键冲刺」收回去：倍率存在后端设置里，留着会连累别的页面
         applyDash(false);
+        // 生成任务是全局单例 ScriptRecorder，页面销毁了它还在跑：
+        // ① 白耗几分钟 CPU 与电量；② 用户立刻打开下一部视频时，那边的 start 会被
+        // already_running 怼回来。所以离开播放页必须把「自己的」任务收掉 ——
+        // 带 id 是为了不误杀「AI生成脚本」页用户手动发起的生成。
+        if (genTimer) { clearTimeout(genTimer); genTimer = null; }
+        if ((genState === 'starting' || genState === 'running') && genId) {
+            try {
+                // keepalive：beforeunload 阶段的普通 fetch 可能被浏览器丢弃
+                fetch('/api/osr/funscript-gen/cancel', {
+                    method: 'POST', keepalive: true,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: genId })
+                }).catch(function () { });
+            } catch (e) { }
+        }
+        genState = ''; genKeyFor = ''; genId = ''; genLastPoints = null;
         // 页面真正卸载：通知后端停止播放时钟（OSR 设备停止驱动）
         fetch('/api/osr/playback-time', {
             method: 'POST',

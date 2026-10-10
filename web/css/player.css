@@ -16,24 +16,32 @@ html,body{width:100%;height:100%;margin:0}
 body>#container{position:absolute;inset:0;display:flex;flex-direction:column;z-index:1}
 
 /* Top bar */
-.topbar{position:absolute;top:0;left:0;right:0;z-index:23;display:flex;align-items:center;justify-content:flex-start;padding:12px 16px;background:linear-gradient(to bottom,rgba(0,0,0,.7),transparent);transition:opacity .3s,background .3s;pointer-events:auto}
+/* v2.7.29：返回按钮整体下移 6px（padding-top 12→18、底 10），是用户明确要求「往下移动一点」。
+   下移后 .topbar 内容高 18~54，左下角时间胶囊 .ptime 同步从 top:46 挪到 58 避让，两者不相撞。 */
+.topbar{position:absolute;top:0;left:0;right:0;z-index:23;display:flex;align-items:center;justify-content:flex-start;padding:calc(18px + env(safe-area-inset-top)) 16px 10px;background:linear-gradient(to bottom,rgba(0,0,0,.7),transparent);transition:opacity .3s,background .3s;pointer-events:auto}
 /* v2.7.24：控制条淡出时顶栏容器自身保持可见（只撤掉背景渐变与鼠标穿透），
    只让「返回 / 标题」淡走，冲刺按钮（.topbar-actions）始终留在画面上。 */
 .topbar.ui-dim{opacity:1;background:none;pointer-events:none}
-.topbar.ui-dim>a{opacity:0}
+/* v2.7.29：淡出态下「返回」不能跟着变成点不到 ——
+   以前 .topbar.ui-dim 整条 pointer-events:none + a 透明，手指按在返回键上其实是穿透到画面
+   （只是唤出一次控制条），用户体感就是「返回按钮点不到 / 不灵敏」。现在淡显到 .45 且保持
+   可点：返回是导航，不该被自动淡出一起锁死；只有画面控制才该吃掉淡出期间的点击。 */
+.topbar.ui-dim>a{opacity:.45;pointer-events:auto}
 .topbar.ui-dim .title{opacity:0}
 .topbar.ui-dim .topbar-actions{pointer-events:auto}
-.topbar a{color:#fff;text-decoration:none;font-size:16px;display:flex;align-items:center;gap:8px;opacity:.9}
+/* v2.7.29：热区从 ~22px 撑到 36px（min-height + 上下 padding），触摸命中更宽容。
+   左右不额外留白太多，避免「← 返回」在窄屏顶栏里把标题挤没。 */
+.topbar a{color:#fff;text-decoration:none;font-size:16px;display:flex;align-items:center;gap:8px;opacity:.9;min-height:36px;padding:4px 8px 4px 2px;text-shadow:0 1px 3px rgba(0,0,0,.75)}
 .topbar a:hover{opacity:1}
 .topbar .back-arrow{font-size:24px}
 .topbar .title{font-size:16px;color:#ccc;max-width:50vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:auto}
 /* 顶栏小按钮（一键冲刺）：v2.7.27 起**回到顶栏条内、紧跟「← 返回」右侧**。
    不浮到画面上 —— v2.7.25 挂的 top:50px 水平居中，正好压住画面中间那格人物的头/胸，
-   实测遮挡主体。顶栏是 flex 流（padding 12px 16px），按钮 static 落在 12~42px，
+   实测遮挡主体。顶栏是 flex 流（v2.7.29 起 padding 18px 16px 10px，整体下移 6px），按钮 static 落在 18~54px，
    即画面外的 HUD 黑色渐变条内，主体画面一眼到底；标题靠 margin-left:auto 仍保持最右。
    embed / VR / 脚本编辑页的顶栏是零高度容器，按钮再各自浮到画面顶沿（见下方各模式规则）。 */
 .topbar-actions{position:static;flex:0 0 auto;display:flex;align-items:center;
-    margin-left:12px;z-index:2;pointer-events:auto}
+    margin-left:32px;z-index:2;pointer-events:auto}
 /* v2.7.26：z-index 23 上提到 .topbar 基础规则里。原来这条 :not() 规则特异性 (0,3,1)，
    比 body.manualrec .topbar 的 (0,2,1) 高，会把脚本编辑页的 z-index:31 覆盖成 23，
    冲刺按钮就被 .mr-overlay(30) 的工具条 (.mr-topbar-row-tools) 吃掉点击（实测点不到）。
@@ -50,7 +58,8 @@ body>#container{position:absolute;inset:0;display:flex;flex-direction:column;z-i
 /* 顶部时间胶囊：播放时间从下方按钮行移到播放器上方顶栏下沿。
    pointer-events:none —— 纯展示，不吃掉画面上的点击（控制条唤出 / 暂停判定）。
    z-index 与 topbar 同级，跟随 setUiVisible 一起淡入淡出。 */
-.ptime{position:absolute;top:46px;left:16px;z-index:20;display:flex;align-items:center;gap:7px;
+/* v2.7.29：随顶栏下移，避免被下移后的「← 返回」压住（topbar z-index 23 > ptime 20） */
+.ptime{position:absolute;top:calc(58px + env(safe-area-inset-top));left:16px;z-index:20;display:flex;align-items:center;gap:7px;
     font-size:15px;font-variant-numeric:tabular-nums;color:#eaf2ff;line-height:1;
     background:rgba(0,0,0,.55);padding:5px 11px;border-radius:20px;
     border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(8px);
@@ -357,7 +366,7 @@ body.native-mode #video{opacity:0}
 /* ─── 脚本编辑覆盖层（manualrec=1）──────────────────────────── */
 .mr-overlay{position:absolute;inset:0;z-index:30;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between}
 .mr-overlay>*{pointer-events:auto}
-.mr-topbar{position:absolute;top:0;left:0;right:0;display:flex;flex-direction:column;gap:8px;padding:10px 14px;background:linear-gradient(to bottom,rgba(0,0,0,.65),transparent);z-index:5}
+.mr-topbar{position:absolute;top:env(safe-area-inset-top);left:0;right:0;display:flex;flex-direction:column;gap:8px;padding:10px 14px;background:linear-gradient(to bottom,rgba(0,0,0,.65),transparent);z-index:5}
 .mr-back{font-size:15px;color:#fff;background:rgba(255,255,255,.12);border:none;border-radius:18px;padding:7px 13px;display:flex;align-items:center;gap:5px;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .mr-back:active{opacity:.8}
 .mr-title{font-size:15px;color:#fff;font-weight:600;position:absolute;left:50%;transform:translateX(-50%);opacity:.9}
@@ -376,7 +385,7 @@ body.native-mode #video{opacity:0}
 .mr-slider-track{flex:1;width:6px;background:rgba(255,255,255,.18);border-radius:3px;position:relative;overflow:hidden;margin:4px 0}
 .mr-slider-fill{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,#22d3ee,#67e8f9);border-radius:3px;pointer-events:none}
 .mr-slider::after{content:'';position:absolute;width:20px;height:20px;border-radius:50%;background:#22d3ee;box-shadow:0 0 8px rgba(34,211,238,.55);left:50%;transform:translateX(-50%);bottom:calc(14px + (var(--mr-thumb,50%) * (100% - 48px) / 100));pointer-events:none}
-.mr-botbar{position:absolute;left:12px;right:88px;bottom:14px;display:flex;align-items:center;gap:10px;z-index:5;background:rgba(0,0,0,.42);border-radius:12px;padding:6px 10px;pointer-events:none}
+.mr-botbar{position:absolute;left:12px;right:88px;bottom:calc(14px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:10px;z-index:5;background:rgba(0,0,0,.42);border-radius:12px;padding:6px 10px;pointer-events:none}
 .mr-wave{flex:1 1 auto;min-width:0;height:56px;display:block;pointer-events:none}
 .mr-recinfo{flex:0 0 auto;display:flex;align-items:center;gap:8px;color:#fff;font-size:14px;font-variant-numeric:tabular-nums;background:rgba(0,0,0,.45);padding:4px 12px;border-radius:16px}
 .mr-rec-dot{width:8px;height:8px;border-radius:50%;background:#ef4444;animation:mrBlink 1s infinite;display:none}
@@ -414,7 +423,7 @@ body.manualrec .topbar>a,
 body.manualrec .topbar .title{display:none}
 /* 脚本编辑页：顶栏零高度，按钮浮到画面顶沿居中（脚本编辑页顶部是录制工具条，
    靠左/靠右都会压到它的按钮，居中只压最上面一条 30px 窄边） */
-body.manualrec .topbar-actions{position:absolute;top:4px;left:50%;right:auto;margin:0;transform:translateX(-50%);z-index:2}
+body.manualrec .topbar-actions{position:absolute;top:calc(4px + env(safe-area-inset-top));left:50%;right:auto;margin:0;transform:translateX(-50%);z-index:2}
 body.manualrec .mr-title{display:none}
 body.manualrec .controls{display:none}
 body.manualrec .ptime{display:none}

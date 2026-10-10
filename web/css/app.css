@@ -336,6 +336,10 @@ select.form-input:focus{background-image:url("data:image/svg+xml,%3Csvg xmlns='h
 .dir-item-icon{font-size:20px;color:#2fb7e8;flex-shrink:0;width:24px;text-align:center}
 .dir-item-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dir-item-arrow{color:#555;font-size:18px;flex-shrink:0}
+.smbq-file{display:flex;align-items:center;gap:12px;padding:10px 20px;cursor:pointer;transition:background .12s;color:#d8e5ee;font-size:14px}
+.smbq-file:hover{background:rgba(47,183,232,.12)}
+.smbq-play{color:#2fb7e8;font-size:13px;flex-shrink:0;margin-left:auto;padding:2px 8px;border:1px solid rgba(47,183,232,.4);border-radius:4px}
+.smbq-file:hover .smbq-play{background:rgba(47,183,232,.18)}
 .modal-empty{text-align:center;padding:40px 20px;color:#6b7c85;font-size:14px}
 .modal-error{text-align:center;padding:40px 20px;color:#e85050;font-size:14px}
 
@@ -988,3 +992,18 @@ body{
 .ver-update-err { color: #ff6b6b; }
 .ver-update-bar { height: 6px; background: rgba(255,255,255,.1); border-radius: 4px; overflow: hidden; margin-top: 6px; }
 .ver-update-bar-fill { height: 100%; background: #4A9EFF; transition: width .2s; }
+
+/* VR 蓝牙时间桥：扫描到的设备列表 */
+.vrbt-devlist{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.vrbt-dev{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.10);
+    background:rgba(255,255,255,.05);cursor:pointer}
+.vrbt-dev:hover{background:rgba(255,255,255,.10)}
+.vrbt-dev-main{min-width:0;flex:1}
+.vrbt-dev-name{font-size:14px;font-weight:600;color:#dce8ee;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vrbt-dev-addr{font-size:12px;color:#6b7c85;margin-top:2px}
+.vrbt-dev-tag{flex-shrink:0;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;
+    color:#0a0616;background:linear-gradient(150deg,#00e5ff,#9b5cff)}
+.vrbt-dev-tag--bonded{background:rgba(255,255,255,.18);color:#dce8ee}
+.vrbt-empty{font-size:13px;color:#6b7c85;padding:10px 2px}

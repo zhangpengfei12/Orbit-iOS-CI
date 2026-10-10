@@ -38,6 +38,38 @@ enum ApiStubs {
         }
         server.get["/api/deovr/status"] = { _ in json(["ok": true, "connected": false]) }
 
+        // ── VR 蓝牙时间桥（安卓 2.7.43 新增；iOS 尚未实现）──
+        // 安卓做法是两端都装 Orbit：头显端用回环 127.0.0.1:23554 取时间轴，再经 BLE 广播。
+        // iOS 暂无这条链路，但**不能让它 404**——前端 app.js 启动时就会拉 vrbt/status，
+        // 404 会走 catch 分支并打断 VR 页初始化。返回 200 + implemented:false 让它降级成「未支持」。
+        // scan 两种 method 都注册：安卓的 handleVrBt 对 scan 同时支持 POST（起扫描）与 GET（取结果）。
+        for m in ["/api/vrbt/connect", "/api/vrbt/disconnect", "/api/vrbt/scan"] {
+            server.post[m] = { _ in notImplemented("VR 蓝牙时间桥（iOS 暂未实现）") }
+        }
+        server.get["/api/vrbt/scan"] = { _ in json(["ok": true, "devices": [] as [Any]]) }
+        server.get["/api/vrbt/status"] = { _ in
+            json(["ok": true, "connected": false, "role": "sink",
+                  "implemented": false, "note": "VR 蓝牙时间桥（iOS 暂未实现）"] as [String: Any])
+        }
+
+        // ── AI 生成脚本（iOS 暂无视频逐帧分析管线）──
+        // 后处理算法（FunscriptPost）已移植就位，缺的是「解码视频 → 运动分析」这一段。
+        // 前端 player.js 在无脚本视频上会自动 POST start，404 会让它误判成生成失败并反复重试。
+        // ⚠ status 是 POST（前端用 postJson 带 {full:1}），不是 GET。
+        for m in ["/api/osr/funscript-gen/start", "/api/osr/funscript-gen/cancel",
+                  "/api/osr/funscript-gen/status"] {
+            server.post[m] = { _ in
+                json(["ok": true, "running": false, "implemented": false,
+                      "note": "AI 生成脚本（iOS 暂无视频逐帧分析管线）"] as [String: Any])
+            }
+        }
+
+        // ── 手动录制（iOS 暂无录制管线）──
+        for m in ["/api/record/start", "/api/record/write", "/api/record/cancel",
+                  "/api/record/probe", "/api/record/check"] {
+            server.post[m] = { _ in notImplemented("手动录制（iOS 暂无录制管线）") }
+        }
+
         // ── OSR 设备类：真实实现见 ApiOsr.swift（BLE/UDP 链路）──
         server.post["/api/osr/dash-mode"] = { req in
             guard let body = parseJSON(req) else { return apiError("invalid_json") }
