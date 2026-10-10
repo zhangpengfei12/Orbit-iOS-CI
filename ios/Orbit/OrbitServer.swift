@@ -121,10 +121,23 @@ final class OrbitServer {
         let full = (root as NSString).appendingPathComponent(rel)
         guard FileManager.default.fileExists(atPath: full),
               let data = try? Data(contentsOf: URL(fileURLWithPath: full)) else {
+            Diagnostics.shared.logRequest(method: "GET", path: "/" + rel, status: 404)
             return .notFound
         }
         let mime = (full as NSString).pathExtension.mimeType()
-        return .raw(200, "OK", ["Content-Type": mime, "Cache-Control": "no-cache"]) { writer in
+        Diagnostics.shared.logRequest(method: "GET", path: "/" + rel, status: 200)
+        // ⚠ build 26 黑屏教训（真机诊断实锤）：Swifter 对 .raw 响应（length=-1）既不写
+        //   Content-Length 也不声明 Connection: close，写完 body 直接关 socket —— HTTP/1.1
+        //   下这是「无长度界定」的响应，WebKit 网络栈无法确定 body 结束边界，didFinish
+        //   一直不触发 → WebView 永远停在黑底空页。这里必须手动补 Content-Length +
+        //   Connection: close，让客户端明确知道响应边界（404 无 body 靠 EOF 能收尾，
+        //   所以 build 23 反而有「加载完成」日志 —— 这就是两次黑屏表现的差异来源）。
+        return .raw(200, "OK", [
+            "Content-Type": mime,
+            "Content-Length": "\(data.count)",
+            "Connection": "close",
+            "Cache-Control": "no-cache"
+        ]) { writer in
             try writer.write(data)
         }
     }

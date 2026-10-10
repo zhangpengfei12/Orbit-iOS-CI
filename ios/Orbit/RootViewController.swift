@@ -14,6 +14,9 @@ final class RootViewController: UIViewController {
         let content = WKUserContentController()
         content.add(BridgeProxy.shared, name: "Orbit")
         content.add(BridgeProxy.shared, name: "OrbitPlayer")
+        // JS 错误捕获：黑屏排障靠它 —— 前端任何未捕获异常 / console.error 都回传诊断日志
+        let errHook = WKUserScript(source: Self.jsErrorHook, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        content.addUserScript(errHook)
         let config = WKWebViewConfiguration()
         config.userContentController = content
         let view = WKWebView(frame: .zero, configuration: config)
@@ -23,6 +26,32 @@ final class RootViewController: UIViewController {
         view.backgroundColor = .black
         return view
     }()
+
+    /// documentStart 注入：捕获 JS 未捕获异常与 console.error / console.warn，
+    /// 经 messageHandlers.Orbit 回传给 BridgeProxy 写入诊断日志。
+    /// 每类消息限 30 条，防止渲染循环刷爆诊断缓冲（800 行上限）。
+    private static let jsErrorHook = """
+    (function(){
+      var N = 0;
+      function post(text){
+        if (N++ > 90) return;
+        try { window.webkit.messageHandlers.Orbit.postMessage(text); } catch(e){}
+      }
+      window.onerror = function(msg, src, line, col){
+        post('JSERROR: ' + msg + ' @' + src + ':' + line + ':' + col);
+      };
+      window.addEventListener('unhandledrejection', function(ev){
+        post('JSREJECT: ' + (ev.reason && (ev.reason.stack || ev.reason.message) || ev.reason));
+      });
+      ['error','warn'].forEach(function(level){
+        var orig = console[level];
+        console[level] = function(){
+          post('CONSOLE-' + level.toUpperCase() + ': ' + Array.prototype.map.call(arguments, String).join(' '));
+          orig.apply(console, arguments);
+        };
+      });
+    })();
+    """
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -72,8 +101,32 @@ final class RootViewController: UIViewController {
 }
 
 extension RootViewController: WKNavigationDelegate {
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        Diagnostics.shared.log("WEB", "开始请求 \(webView.url?.absoluteString ?? "-")")
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        Diagnostics.shared.log("WEB", "已收到响应开始渲染")
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        Diagnostics.shared.log("WEB", "❌ 主文档加载失败: \(error)")
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Diagnostics.shared.log("WEB", "页面加载完成 \(webView.url?.absoluteString ?? "-")")
+        // dump 页面实况：纯黑屏时靠它区分「没渲染」还是「渲染了但内容空」
+        webView.evaluateJavaScript("""
+        (function(){
+          var b = document.body;
+          return 'readyState=' + document.readyState +
+                 ' | title=' + document.title +
+                 ' | body文本长度=' + (b ? b.innerText.length : -1) +
+                 ' | 子资源数=' + (window.performance ? performance.getEntriesByType('resource').length : -1);
+        })()
+        """) { result, _ in
+            Diagnostics.shared.log("WEB", "页面实况: \(result ?? "nil")")
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -87,6 +140,12 @@ final class BridgeProxy: NSObject, WKScriptMessageHandler {
 
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
+        // jsErrorHook（documentStart 注入）会把 JS 异常 / console.error 经这里回传诊断日志
+        if message.name == "Orbit", let text = message.body as? String,
+           text.hasPrefix("JSERROR:") || text.hasPrefix("JSREJECT:") || text.hasPrefix("CONSOLE-") {
+            Diagnostics.shared.log("JS", text)
+            return
+        }
         // M1 起在这里分发 39 个桥方法（见 ENDPOINTS.md 与 Android MainActivity.kt:610-1036）
         print("[Orbit] js -> native: \(message.name) body=\(message.body)")
     }
