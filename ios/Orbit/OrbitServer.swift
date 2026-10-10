@@ -109,6 +109,29 @@ final class OrbitServer {
 
     // MARK: - 静态资源
 
+    /// 显式 MIME 映射。
+    /// ⚠⚠ 页面全裸根因（build 30 真机实锤，抽帧确认 CSS 全被拒）：不能用 Swifter 的
+    ///   `String.mimeType()` —— 它的实现是 `NSString(string: self).mimeType()`，
+    ///   内部又取一次 pathExtension；对裸扩展名（如 "css"，无点号）pathExtension 返回空串，
+    ///   matchMimeType("") 落到兜底 `application/octet-stream`。
+    ///   之前写的 `(full as NSString).pathExtension.mimeType()` 恰好踩中：先取出 "css"，
+    ///   再对 "css" 调 mimeType() → 恒 octet-stream。
+    ///   后果：图片 <img> 与主文档靠 WebKit 内容嗅探还能渲染，但 CSS/JS 被 WebKit
+    ///   严格 MIME 校验拒绝（样式表/脚本不应用）→ 页面元素全裸、竖排堆叠、文字重叠。
+    private static let mimeByExt: [String: String] = [
+        "html": "text/html; charset=utf-8", "htm": "text/html; charset=utf-8",
+        "css": "text/css; charset=utf-8",
+        "js": "application/javascript; charset=utf-8",
+        "json": "application/json; charset=utf-8",
+        "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "gif": "image/gif", "svg": "image/svg+xml", "webp": "image/webp",
+        "ico": "image/x-icon",
+        "mp4": "video/mp4", "webm": "video/webm", "m3u8": "application/vnd.apple.mpegurl",
+        "mp3": "audio/mpeg", "wav": "audio/wav", "m4a": "audio/x-m4a",
+        "woff": "font/woff", "woff2": "font/woff2", "ttf": "font/ttf", "otf": "font/otf",
+        "txt": "text/plain; charset=utf-8", "xml": "text/xml; charset=utf-8"
+    ]
+
     /// 从 bundle 的 web/ 里取文件返回。HTML/JS/CSS 一律 no-cache，
     /// 对齐 WebServer.kt 的策略 —— 覆盖安装后「旧 HTML 配新 JS」会表现成升级后点击无反应。
     private func serveFile(_ relative: String) -> HttpResponse {
@@ -133,7 +156,8 @@ final class OrbitServer {
             Diagnostics.shared.logRequest(method: "GET", path: "/" + rel, status: 404)
             return .notFound
         }
-        let mime = (full as NSString).pathExtension.mimeType()
+        let ext = (full as NSString).pathExtension.lowercased()
+        let mime = Self.mimeByExt[ext] ?? "application/octet-stream"
         Diagnostics.shared.logRequest(method: "GET", path: "/" + rel, status: 200)
         // ⚠ 黑屏迭代史（真机诊断实证，别回退）：
         //   build 23: 404 空体 → didFinish ✓（但没内容，黑屏）
@@ -147,6 +171,9 @@ final class OrbitServer {
         //   代价：带不上 Cache-Control: no-cache（.ok(.data) 不支持附加头）。
         //   主文档已用 reloadIgnoringLocalAndRemoteCacheData 兜底；子资源升级后若
         //   出现「旧 JS」问题再回头解决（对比黑屏是次要问题）。
-        return .ok(.data(data, contentType: mime))
+        // ✅ 后经核实 Swifter 1.5.0 的 .ok 自带第二个关联值（自定义头字典），
+        //   可同时携带 no-cache —— 覆盖安装升级后旧缓存资源也能强制失效。
+        return .ok(.data(data, contentType: mime),
+                   ["Cache-Control": "no-cache, no-store, must-revalidate"])
     }
 }
