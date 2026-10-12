@@ -52,6 +52,17 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode_26.3.app
       - name: 安装 XcodeGen
         run: brew install xcodegen
+      # ⚠ AMSMB2 静态化（build 43 启动崩溃根因修复）：CI runner 有外网，克隆 AMSMB2 3.0.0
+      #   源码到 ios/ci_vendor/AMSMB2，并把 product 从 .dynamic 改写成 .static，
+      #   再用 project.yml 的本地 path 引用 —— 改为静态链接，消除动态框架 dyld 启动崩溃。
+      - name: 本地化 AMSMB2 并改静态链接
+        run: |
+          AMSMB2_DIR="ios/ci_vendor/AMSMB2"
+          rm -rf "$AMSMB2_DIR"
+          git clone --depth 1 --branch 3.0.0 https://github.com/amosavian/AMSMB2.git "$AMSMB2_DIR"
+          sed -i '' 's/type: \.dynamic/type: .static/' "$AMSMB2_DIR/Package.swift"
+          echo "=== AMSMB2 product 类型（应出现 static）==="
+          grep -n "type: .static" "$AMSMB2_DIR/Package.swift" || echo "!! 未匹配到 static，sed 可能失败"
       # ⚠ build 23 黑屏修复：project.yml 的 folder reference 现在指向工程内 WebResources/web，
       #   生成工程前必须先把共享层 web/ 拷进去（Xcode 26 归档不吃工程外路径的 folder reference，
       #   会拷出空目录 —— 真机诊断已实锤：bundle 内 web/ 存在但顶层条目为空）。
@@ -118,6 +129,16 @@ jobs:
       - name: 安装 XcodeGen
         if: steps.sig.outputs.ready == 'true'
         run: brew install xcodegen
+      # ⚠ AMSMB2 静态化（build 43 启动崩溃根因修复）：同 compile-check，克隆并改写 product 为 static。
+      - name: 本地化 AMSMB2 并改静态链接
+        if: steps.sig.outputs.ready == 'true'
+        run: |
+          AMSMB2_DIR="ios/ci_vendor/AMSMB2"
+          rm -rf "$AMSMB2_DIR"
+          git clone --depth 1 --branch 3.0.0 https://github.com/amosavian/AMSMB2.git "$AMSMB2_DIR"
+          sed -i '' 's/type: \.dynamic/type: .static/' "$AMSMB2_DIR/Package.swift"
+          echo "=== AMSMB2 product 类型（应出现 static）==="
+          grep -n "type: .static" "$AMSMB2_DIR/Package.swift" || echo "!! 未匹配到 static，sed 可能失败"
       # ⚠ 与 compile-check 同理：先把共享层 web/ 拷进工程内，folder reference 才能真正进包
       #   （build 23 黑屏根因：工程外路径的 folder reference 被 Xcode 26 归档拷成空目录）。
       - name: 拷贝 web 资源进工程内

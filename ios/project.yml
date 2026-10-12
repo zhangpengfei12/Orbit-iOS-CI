@@ -24,15 +24,20 @@ packages:
   Swifter:
     url: https://github.com/httpswift/swifter
     from: "1.5.0"
-  # SMB 网络共享：AMSMB2 是 libsmb2 的 Swift 封装，支持 SMB2/SMB3。
-  # ⚠ 授权协议硬约束：源码 MIT，但它**静态链接 libsmb2（LGPL v2.1）**，
-  #   因此整体按 LGPL v2.1 处理；AMSMB2 的 Package.swift 已把 product 声明为
-  #   `.library(type: .dynamic)`，Xcode 会自动 embed & sign —— **不要**改成静态链接，
-  #   否则不符合 LGPL 的动态链接要求，上架 App Store 会有合规风险。
-  # ⚠ 版本要求：该包 Package.swift 是 swift-tools-version 6.0，需 Xcode 16+ 工具链解析。
+  # SMB 网络共享：AMSMB2 是 libsmb2（C，LGPL v2.1）的 Swift 封装，支持 SMB2/SMB3。
+  # ⚠⚠ 关键修复（build 43 真机一开即退回桌面根因）：上游 AMSMB2 的 product 声明为
+  #   `.library(type: .dynamic)`，会在主可执行文件里塞一条 LC_LOAD_DYLIB 硬依赖，
+  #   dyld 启动时必须加载 AMSMB2.framework。实测该动态框架在「归档后手改 bundle +
+  #   exportArchive 重新签名」的链路下，真机启动直接 dyld 失败 → 进不了首页。
+  #   修复：ios.yml 在 xcodegen 之前把源码 clone 到 ios/ci_vendor/AMSMB2 并 sed 把
+  #   product 改写成 `.static`（见 ios.yml 的「本地化 AMSMB2」步骤），改为静态链接 ——
+  #   不再有独立的 AMSMB2.framework，彻底消除动态框架启动崩溃。
+  #   备注：iOS App Store 分发下「动态链接以满足 LGPL」本就形同虚设（设备无法重链接），
+  #   静态链接 + 开源源码随附是符合 LGPL 的通行做法。上游 Package.swift 实际是
+  #   swift-tools-version 5.6（非注释旧记的 6.0），Xcode 26 可正常解析。
+  # ⚠ 本地路径：本机 Windows 不参与构建（也无外网），CI runner 有外网，由 ios.yml 注入源码。
   AMSMB2:
-    url: https://github.com/amosavian/AMSMB2
-    from: "3.0.0"
+    path: ci_vendor/AMSMB2
 
 targets:
   Orbit:
@@ -82,6 +87,7 @@ targets:
     dependencies:
       - package: Swifter
         product: Swifter
-      # 动态库产品：Xcode 自动完成 Embed & Sign，无需手写 embed 阶段
+      # 静态库产品（见 packages 处说明）：已本地化改写为 .static，链接进 app 主程序，
+      # 无独立 .framework、无 Embed 阶段 —— 这正是消除 build 43 dyld 启动崩溃的关键。
       - package: AMSMB2
         product: AMSMB2
