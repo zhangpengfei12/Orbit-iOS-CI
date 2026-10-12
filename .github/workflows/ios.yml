@@ -59,7 +59,7 @@ jobs:
         run: |
           AMSMB2_DIR="ios/ci_vendor/AMSMB2"
           rm -rf "$AMSMB2_DIR"
-          git clone --depth 1 --branch 3.0.0 https://github.com/amosavian/AMSMB2.git "$AMSMB2_DIR"
+          git clone --depth 1 --branch 3.4.0 https://github.com/amosavian/AMSMB2.git "$AMSMB2_DIR"
           # libsmb2 是 AMSMB2 的 git 子模块：不初始化则 Dependencies/libsmb2/lib 为空，
           # 会连锁报「Source files for target libsmb2 ... File not found」+
           # 「Unable to find module dependency: 'SMB2'」。远程 SPM url 能编过正是因为
@@ -140,7 +140,7 @@ jobs:
         run: |
           AMSMB2_DIR="ios/ci_vendor/AMSMB2"
           rm -rf "$AMSMB2_DIR"
-          git clone --depth 1 --branch 3.0.0 https://github.com/amosavian/AMSMB2.git "$AMSMB2_DIR"
+          git clone --depth 1 --branch 3.4.0 https://github.com/amosavian/AMSMB2.git "$AMSMB2_DIR"
           # libsmb2 是 AMSMB2 的 git 子模块：不初始化则 Dependencies/libsmb2/lib 为空，
           # 会连锁报「Source files for target libsmb2 ... File not found」+
           # 「Unable to find module dependency: 'SMB2'」。远程 SPM url 能编过正是因为
