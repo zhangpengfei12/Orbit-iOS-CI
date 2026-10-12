@@ -60,6 +60,11 @@ jobs:
           AMSMB2_DIR="ios/ci_vendor/AMSMB2"
           rm -rf "$AMSMB2_DIR"
           git clone --depth 1 --branch 3.0.0 https://github.com/amosavian/AMSMB2.git "$AMSMB2_DIR"
+          # libsmb2 是 AMSMB2 的 git 子模块：不初始化则 Dependencies/libsmb2/lib 为空，
+          # 会连锁报「Source files for target libsmb2 ... File not found」+
+          # 「Unable to find module dependency: 'SMB2'」。远程 SPM url 能编过正是因为
+          # SwiftPM 会自动拉子模块；本地 clone 必须显式补这一步。
+          git -C "$AMSMB2_DIR" submodule update --init --recursive
           sed -i '' 's/type: \.dynamic/type: .static/' "$AMSMB2_DIR/Package.swift"
           echo "=== AMSMB2 product 类型（应出现 static）==="
           grep -n "type: .static" "$AMSMB2_DIR/Package.swift" || echo "!! 未匹配到 static，sed 可能失败"
@@ -136,6 +141,11 @@ jobs:
           AMSMB2_DIR="ios/ci_vendor/AMSMB2"
           rm -rf "$AMSMB2_DIR"
           git clone --depth 1 --branch 3.0.0 https://github.com/amosavian/AMSMB2.git "$AMSMB2_DIR"
+          # libsmb2 是 AMSMB2 的 git 子模块：不初始化则 Dependencies/libsmb2/lib 为空，
+          # 会连锁报「Source files for target libsmb2 ... File not found」+
+          # 「Unable to find module dependency: 'SMB2'」。远程 SPM url 能编过正是因为
+          # SwiftPM 会自动拉子模块；本地 clone 必须显式补这一步。
+          git -C "$AMSMB2_DIR" submodule update --init --recursive
           sed -i '' 's/type: \.dynamic/type: .static/' "$AMSMB2_DIR/Package.swift"
           echo "=== AMSMB2 product 类型（应出现 static）==="
           grep -n "type: .static" "$AMSMB2_DIR/Package.swift" || echo "!! 未匹配到 static，sed 可能失败"
