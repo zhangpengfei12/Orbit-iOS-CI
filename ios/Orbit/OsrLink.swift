@@ -85,56 +85,80 @@ enum OsrLink {
 
     /// UDP 发送（NWConnection，连接按 host:port 缓存复用，避免手动滑块高频发攛建连）。
     /// UDP 无回执，发出即视为成功（对齐安卓 DatagramSocket 行为）。
+    /// build 57 修复：连接进入 failed（如 POSIX 57 "Socket is not connected"）后旧版
+    /// 一直复用坏对象，后续发送永不恢复；现对齐安卓「每次发送一个新 DatagramSocket」
+    /// 的语义——失败即弃缓存重建并重试一次。
     static func sendUdp(host: String, port: Int, payload: String) -> (ok: Bool, detail: String) {
         let key = "\(host):\(port)"
-        if udpKey != key {
-            udpConn?.cancel()
-            udpConn = nil
-            udpKey = key
-            udpReady = false
-        }
-        if udpConn == nil {
-            guard let p = NWEndpoint.Port(rawValue: UInt16(clamping: port)), p.rawValue != 0 else {
-                return (false, "端口无效：\(port)")
+        var last = (false, "UDP 发送失败")
+        for attempt in 0...1 {
+            if attempt > 0 {
+                Diagnostics.shared.log("OSR", "UDP 发送失败，弃旧连接重建重试：\(last.1)")
+                resetUdpConn()
             }
-            let conn = NWConnection(host: NWEndpoint.Host(host), port: p, using: .udp)
-            let readySem = DispatchSemaphore(value: 0)
-            conn.stateUpdateHandler = { state in
-                switch state {
-                case .ready:
-                    udpReady = true
-                    readySem.signal()
-                case .failed(let err):
-                    udpReady = false
-                    Diagnostics.shared.log("OSR", "UDP 连接失败：\(err)")
-                    readySem.signal()
-                case .cancelled:
-                    udpReady = false
-                default:
-                    break
+            if udpKey != key {
+                resetUdpConn()
+                udpKey = key
+            }
+            if udpConn == nil {
+                guard let p = NWEndpoint.Port(rawValue: UInt16(clamping: port)), p.rawValue != 0 else {
+                    return (false, "端口无效：\(port)")
                 }
+                let conn = NWConnection(host: NWEndpoint.Host(host), port: p, using: .udp)
+                let readySem = DispatchSemaphore(value: 0)
+                conn.stateUpdateHandler = { state in
+                    switch state {
+                    case .ready:
+                        udpReady = true
+                        readySem.signal()
+                    case .waiting(let err):
+                        // 本地网络权限被拒 / 无路由 / 接口未就绪时连接会停在 waiting：
+                        // 系统虽自动重试，但包出不了网卡——必须暴露到诊断页
+                        Diagnostics.shared.log("OSR", "UDP 连接等待（无路由或本地网络权限受限）：\(err)")
+                    case .failed(let err):
+                        udpReady = false
+                        Diagnostics.shared.log("OSR", "UDP 连接失败：\(err)")
+                        // 关键：连接已死，弃缓存让下一次发送重建（旧版卡死在坏对象上）
+                        udpConn = nil
+                        readySem.signal()
+                    case .cancelled:
+                        udpReady = false
+                    default:
+                        break
+                    }
+                }
+                conn.start(queue: udpQueue)
+                udpConn = conn
+                udpReady = false
+                // 首包最容易被丢：必须等连接就绪后再发，否则设备收不到（发出 ≠ 送达）
+                _ = readySem.wait(timeout: .now() + 2.0)
             }
-            conn.start(queue: udpQueue)
-            udpConn = conn
-            // 首包最容易被丢：必须等连接就绪后再发，否则设备收不到（发出 ≠ 送达）
-            _ = readySem.wait(timeout: .now() + 2.0)
-        }
-        guard let conn = udpConn, udpReady else {
-            return (false, "UDP 连接未就绪：设备可能不在线，或 IP / 端口不可达")
-        }
-        let data = Data(payload.utf8)
-        let sem = DispatchSemaphore(value: 0)
-        var result = (false, "UDP 发送超时")
-        conn.send(content: data, completion: .contentProcessed { error in
-            if let error {
-                result = (false, "UDP 发送失败：\(error)")
-            } else {
-                result = (true, "UDP 已发送")
+            guard let conn = udpConn, udpReady else {
+                return (false, "UDP 连接未就绪：设备可能不在线、IP / 端口不可达，或 iOS 本地网络权限未放行（设置 → 隐私与安全性 → 本地网络 → Orbit）")
             }
-            sem.signal()
-        })
-        _ = sem.wait(timeout: .now() + 2.0)
-        return result
+            let data = Data(payload.utf8)
+            let sem = DispatchSemaphore(value: 0)
+            var result = (false, "UDP 发送超时")
+            conn.send(content: data, completion: .contentProcessed { error in
+                if let error {
+                    result = (false, "UDP 发送失败：\(error)")
+                } else {
+                    result = (true, "UDP 已发送")
+                }
+                sem.signal()
+            })
+            _ = sem.wait(timeout: .now() + 2.0)
+            if result.ok { return result }
+            last = result
+        }
+        return last
+    }
+
+    /// 弃掉缓存的 UDP 连接（failed / 换目标时调用），下次发送重建新连接。
+    private static func resetUdpConn() {
+        udpConn?.cancel()
+        udpConn = nil
+        udpReady = false
     }
 
     // MARK: - JSON 取值辅助（JSONSerialization 出来的 NSNumber 兼容处理）
