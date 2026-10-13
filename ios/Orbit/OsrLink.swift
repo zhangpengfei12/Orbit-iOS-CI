@@ -210,6 +210,12 @@ enum NativeBridge {
             // 安卓是「应用内 WebView 打开」；iOS 应用内 WKWebView 不支持 Web Serial /
             // Web Bluetooth，统一交给 Safari，行为和安卓跳浏览器一致。
             openURLString(a.first?.asString ?? "")
+        case "openVideoExternal":
+            // 「用系统播放器打开」：iOS 侧用 AVPlayerViewController 播内置服务器的
+            // /video/<key>（Range 206 已就绪），硬件解码通吃 H.264/HEVC，
+            // 绕开 WKWebView <video> 的 hvc1/hev1 兼容坑。
+            // 前端 player.js 编解码探测失败时也会把 videoName 传进来。
+            NativePlayer.shared.play(a.first?.asString ?? "")
 
         // MARK: 姿态（触板陀螺仪 / 摇一摇）
         // ⚠ 不能留空：桥的 Proxy 兜底会让 typeof startTilt 恒为 'function'，

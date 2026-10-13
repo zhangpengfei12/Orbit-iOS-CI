@@ -59,6 +59,12 @@
        这样下面几千行播放逻辑（进度条 / 倍速 / 音量 / 全屏 / 后台保活）一行都不用改。
        VR 分屏必须拿真实 <video> 元素做 WebGL 纹理，所以进 VR 时把 V 切回 videoEl。 */
     var NATIVE_OK = !!(window.OrbitPlayer && typeof window.OrbitPlayer.load === 'function');
+    // iOS 原生播放器通道：系统 AVPlayerViewController（硬件解码，H.264/HEVC 通吃）。
+    // WebView <video> 遇到 HEVC 等不支持编码时报错时，自动转它兜底；
+    // 「用系统播放器打开」按钮也走这个桥。iosNativeTried 保证自动转只试一次，
+    // 原生失败的回调（__onNativePlayerError）会把真实原因显示出来，不会死循环。
+    var IOS_NATIVE = !!(window.Orbit && typeof window.Orbit.openVideoExternal === 'function');
+    var iosNativeTried = false;
     // 内嵌（视频库卡片的 iframe）本期保持 WebView 行为不变
     var useNative = NATIVE_OK && !IS_EMBED;
     var npState = { posMs: 0, durMs: 0, playing: false, ready: false, buffering: false, w: 0, h: 0, rate: 1, vol: 1, muted: false, err: '' };
@@ -1155,6 +1161,17 @@ function isBg() { return nativeBg || document.hidden; }
     V.addEventListener('error', function() {
         // 播放错误时如果不是已知编码问题，再补一次探测给出明确提示
         if (codecBlock && codecBlock.style.display !== 'none') return;
+        // iOS：WebView <video> 解不了（HEVC/hvc1 兼容坑、SMB 未连取不到流等）时，
+        // 自动转系统播放器（AVPlayerViewController 硬件解码）。只试一次，
+        // 原生失败会走 __onNativePlayerError 显示真实原因，不会循环重试。
+        if (IOS_NATIVE && !iosNativeTried) {
+            iosNativeTried = true;
+            try {
+                window.Orbit.openVideoExternal(videoName);
+                showCodecBlock('WebView 无法播放该视频，已自动唤起系统播放器。若没有反应，请点下方按钮手动打开。');
+                return;
+            } catch (e) { /* 桥异常：继续走下面的探测兜底 */ }
+        }
         var err = V.error;
         var code = err ? err.code : 0;
         var msg = '视频加载失败' + (code ? ' (错误码 ' + code + ')' : '') + '。';
@@ -1195,6 +1212,14 @@ function isBg() { return nativeBg || document.hidden; }
         if (videoTapRevealsOnly) { videoTapRevealsOnly = false; showUI(); return; }
         V.paused ? V.play() : V.pause();
     });
+
+    // iOS 原生播放器（AVPlayerViewController）失败回调：SMB 未连、文件不存在、
+    // 取流超时等。把真实原因显示在错误块上，用户可据此处理
+    // （去「SMB」页连共享 / 回「本机媒体」重新导入视频）。
+    window.__onNativePlayerError = function(msg) {
+        showCodecBlock('系统播放器也无法播放：' + (msg || '未知错误') +
+            '。请确认视频已导入 App，或到「SMB」页连接共享后重试。');
+    };
 
     // Progress seek
     progressWrap.addEventListener('pointerdown', function(e) {

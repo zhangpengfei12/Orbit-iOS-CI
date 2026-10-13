@@ -167,9 +167,11 @@ func bridgeInjectionScript() -> String {
       //    让前端走它自己的兜底或降级提示。
       var ORBIT_DEAD = {
         downloadAndInstallApk: 1,   // iOS 不能安装 APK（更新走 TestFlight / App Store）
-        requestIgnoreBattery: 1,    // iOS 没有「电池优化白名单」这套机制
-        openVideoExternal:  1       // 沙盒视频无法交给外部播放器，也没有系统 Intent
+        requestIgnoreBattery: 1     // iOS 没有「电池优化白名单」这套机制
       };
+      // openVideoExternal 已实现：iOS 侧用 AVPlayerViewController 播内置服务器的
+      // /video/<key>（Range 206 就绪），硬件解码通吃 H.264/HEVC。故不列入死亡名单，
+      // 前端「用系统播放器打开」与 WebView 播放失败时的自动转原生都靠它。
       // OrbitPlayer 是安卓 ExoPlayer 的代理层。iOS 没有这一层，
       // 而 player.js 用 `typeof OrbitPlayer.load === 'function'` 判定「有原生内核」——
       // Proxy 兜底会让判定恒为 true，播放被整段导向空实现的 nativeProxy，
