@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import Swifter
 
 /// OSR 设备链路端点（真实实现）：bt-status / bt-disconnect / send / reset /
@@ -53,17 +54,35 @@ enum ApiOsr {
             let cmd = buildAxesPosCommand(ctx, entries, 600)
             let full = ctx.prefix + cmd + ctx.suffix
             let r = OsrLink.dispatch(full)
-            Diagnostics.shared.log("OSR", "reset delivered=\(r.ok) detail=\(r.detail)")
+            let d = OsrLink.osrSettings()
+            let tgt = (OsrLink.asStr(d["connectionType"], "UDP") == "BluetoothSerial")
+                ? "bt:\(OsrLink.asStr(d["btAddress"], ""))"
+                : "\(OsrLink.asStr(d["ip"], "192.168.1.88")):\(OsrLink.asInt(d["port"], 8000))"
+            Diagnostics.shared.log("OSR", "reset target=\(tgt) delivered=\(r.ok) detail=\(r.detail)")
             return json(["ok": true, "delivered": r.ok, "detail": r.detail])
         }
 
         // ── 连接测试：按协议发一组示例动作（L0 大幅往复）──
+        // 除发送结果外附带两样诊断信息（UDP 无回执，「已发送」≠「设备收到」）：
+        //   target —— 指令实际发往的地址，排掉「填错 IP 还以为连着」
+        //   tcp    —— 对同一地址的 TCP 探测，作可达性参考
         server.post["/api/osr/connect-test"] = { _ in
+            let d = OsrLink.osrSettings()
+            let type = OsrLink.asStr(d["connectionType"], "UDP")
             let ctx = OsrLink.cmdContext()
             let cmd = buildTestCommand(ctx)
             let full = ctx.prefix + cmd + ctx.suffix
             let r = OsrLink.dispatch(full)
-            return json(["ok": r.ok, "detail": r.detail])
+            if type == "BluetoothSerial" {
+                return json(["ok": r.ok, "detail": r.detail,
+                             "target": "蓝牙 \(OsrLink.asStr(d["btAddress"], ""))"])
+            }
+            let host = OsrLink.asStr(d["ip"], "192.168.1.88")
+            let port = OsrLink.asInt(d["port"], 8000)
+            let tcp = Self.tcpProbe(host: host, port: port)
+            Diagnostics.shared.log("OSR", "connect-test target=\(host):\(port) sent=\(r.ok) detail=\(r.detail) tcp=\(tcp)")
+            return json(["ok": r.ok, "detail": r.detail,
+                         "target": "\(host):\(port)", "tcp": tcp])
         }
 
         // ── 真实链路状态（首页「设备」磁贴副标题的依据）──
@@ -253,6 +272,46 @@ enum ApiOsr {
             OrbitConfig.shared.save()
             return json(["ok": true, "tcodeVersion": v])
         }
+    }
+
+    // MARK: - 可达性探测（诊断用）
+
+    /// 对 host:port 做一次 TCP 连接探测（2 秒超时），结果只作诊断参考：
+    /// - connected：设备在线且该端口开 TCP，链路一定通
+    /// - refused：主机可达但该端口没开 TCP（设备可能只监听 UDP）
+    /// - timeout / failed：整机不可达 —— IP/端口错、不同网段 / 路由器 AP 隔离，
+    ///   或 iOS「本地网络」权限被拒（包根本发不出网卡，UDP 也会被静默丢弃）
+    private static func tcpProbe(host: String, port: Int) -> String {
+        guard let p = NWEndpoint.Port(rawValue: UInt16(clamping: port)), p.rawValue != 0 else {
+            return "invalid_port"
+        }
+        let conn = NWConnection(host: NWEndpoint.Host(host), port: p, using: .tcp)
+        let sem = DispatchSemaphore(value: 0)
+        var state = "timeout"
+        conn.stateUpdateHandler = { s in
+            switch s {
+            case .ready:
+                state = "connected"
+                sem.signal()
+            case .waiting:
+                // 默认参数下连不上会停在 waiting（系统自动重试），视作不可达
+                state = "timeout"
+                sem.signal()
+            case .failed(let err):
+                if case .posix(let code) = err, code == .ECONNREFUSED {
+                    state = "refused"
+                } else {
+                    state = "failed"
+                }
+                sem.signal()
+            default:
+                break
+            }
+        }
+        conn.start(queue: DispatchQueue(label: "orbit.osr.tcp-probe"))
+        _ = sem.wait(timeout: .now() + 2.0)
+        conn.cancel()
+        return state
     }
 
     // MARK: - 脚本文件定位（App 沙盒 Media 目录）
