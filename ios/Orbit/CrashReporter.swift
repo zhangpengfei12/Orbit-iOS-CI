@@ -10,6 +10,9 @@ import UIKit
 /// - NSSetUncaughtExceptionHandler 兜 NSException / Swift 未捕获异常
 /// - signal() 兜 SIGABRT/SIGSEGV/SIGBUS/SIGILL/SIGTRAP/SIGFPE（含 dyld 之后的 C/ObjC 崩溃）
 /// - 写盘后恢复默认处理并重新触发信号，让系统照常生成标准崩溃报告（双保险）
+///
+/// ⚠ handler 必须是非捕获的静态方法：NSSetUncaughtExceptionHandler / signal 在 iOS 26 SDK
+///   要求 @convention(c)，内联闭包（即便未显式捕获）会被判为「捕获上下文」而编译失败。
 enum CrashReporter {
 
     private static let crashFile: URL = {
@@ -19,16 +22,22 @@ enum CrashReporter {
     }()
 
     static func install() {
-        NSSetUncaughtExceptionHandler { exception in
-            let frames = exception.callStackSymbols.joined(separator: "\n")
-            save(kind: "NSException", title: "\(exception.name.rawValue): \(exception.reason ?? "-")", frames: frames)
-        }
+        NSSetUncaughtExceptionHandler(CrashReporter.handleException)
         for sig in [SIGABRT, SIGSEGV, SIGBUS, SIGILL, SIGTRAP, SIGFPE] {
-            signal(sig, signalHandler)
+            signal(sig, CrashReporter.handleSignal)
         }
     }
 
-    private static let signalHandler: @convention(c) (Int32) -> Void = { sig in
+    /// 非捕获静态方法：NSException 兜底。
+    private static func handleException(_ exception: NSException) {
+        let frames = exception.callStackSymbols.joined(separator: "\n")
+        save(kind: "NSException",
+             title: "\(exception.name.rawValue): \(exception.reason ?? "-")",
+             frames: frames)
+    }
+
+    /// 非捕获静态方法：signal 兜底（@convention(c) 要求非捕获）。
+    private static func handleSignal(_ sig: Int32) {
         var addrs = [UnsafeMutableRawPointer?](repeating: nil, count: 80)
         let count = backtrace(&addrs, Int32(addrs.count))
         let frames: String
