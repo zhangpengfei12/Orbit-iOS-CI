@@ -1270,13 +1270,19 @@
             + '.sidebar-item[data-panel="manual"], .sidebar-item[data-panel="auto"]');
         Array.prototype.forEach.call(navItems, function (navItem) {
             navItem.addEventListener('click', function () {
-                get('/api/osr/settings').then(fillForm);
-                refreshStatus();
-                refreshReverseState();   // 反转态与「OSR 轴设置」共用 axisParams，切面板时重新读一次
+        get('/api/osr/settings').then(function (s) {
+            // 拉取失败（404/网络错）绝不回填，保住输入框当前值——
+            // 旧版会把错误对象喂给 fillForm，表单被冲回默认 IP，用户误以为「保存没生效」
+            if (s && !s.error) fillForm(s);
+        });
+        refreshStatus();
+        refreshReverseState();   // 反转态与「OSR 轴设置」共用 axisParams，切面板时重新读一次
             });
         });
 
-        get('/api/osr/settings').then(fillForm);
+        get('/api/osr/settings').then(function (s) {
+            if (s && !s.error) fillForm(s);   // 同上：失败不回填，避免冲回默认 IP
+        });
         refreshStatus();
         startPolling();
     }

@@ -93,6 +93,13 @@ enum ApiOsr {
             return json(["ok": true, "connected": connected, "connectionType": type])
         }
 
+        // ── 设置读取：前端进面板时 fillForm 依赖它回填（osr.js:1273/1279）。
+        // ⚠ 之前只有 POST 没有 GET → 前端 404 后把表单回填成默认值 192.168.1.88，
+        //    表现为「保存后重进 IP 变回去」「改了 IP 复位仍发旧地址」。
+        server.get["/api/osr/settings"] = { _ in
+            json(OrbitConfig.shared.dictionary(forKeyPath: "settings.osr"))
+        }
+
         // ── 设置保存：合并写（对齐安卓 saveSettingsJson 的合并语义）并回显全量。
         // 旧版整体覆盖会把前端未带的 axisParams/connectionType 冲回默认值。
         server.post["/api/osr/settings"] = { req in
