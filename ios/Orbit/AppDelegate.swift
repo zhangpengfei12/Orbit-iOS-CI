@@ -7,6 +7,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // 崩溃自报器必须最先装：兜住 main 之后、首屏渲染前的任何原生崩溃，
+        // 把调用栈写进沙盒，下次启动弹窗。千万别在它之前放可能崩的代码。
+        CrashReporter.install()
+
         // 启动诊断：读出上一次运行最后写下的里程碑。若本次在「某步之后」崩溃，
         // 上一轮留下的就是「崩溃前最后完成的步」，据此区分是 main 之前（dyld）还是某启动阶段崩。
         if let prev = Self.lastLaunchStep() {
@@ -23,10 +27,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.backgroundColor = .black
-        window.rootViewController = RootViewController()
+        let rootVC = RootViewController()
+        // 若上次运行崩过：弹窗展示调用栈，且暂不加载 web，避免立刻二次崩溃（留出截图时间）
+        if CrashReporter.pendingCrashText() != nil {
+            rootVC.suppressWebLoad = true
+        }
+        window.rootViewController = rootVC
         window.makeKeyAndVisible()
         self.window = window
         Self.markLaunchStep("window_ready")
+
+        if let crash = CrashReporter.pendingCrashText() {
+            CrashReporter.present(on: window, text: crash)
+        }
         return true
     }
 

@@ -13,6 +13,10 @@ final class RootViewController: UIViewController {
     /// 主文档临时加载失败自动重试计数（成功后归零）
     private var provisionalRetries = 0
 
+    /// 上次运行崩溃过时为 true：AppDelegate 设它，viewDidLoad 据此不加载 web，
+    /// 留出时间给崩溃弹窗；用户看完（复制/关闭）后再手动重开 App 即正常加载。
+    var suppressWebLoad = false
+
     private lazy var webView: WKWebView = {
         let content = WKUserContentController()
         content.add(BridgeProxy.shared, name: "Orbit")
@@ -84,6 +88,11 @@ final class RootViewController: UIViewController {
             guard let self else { return }
             if Thread.isMainThread { self.emit(js) }
             else { DispatchQueue.main.async { self.emit(js) } }
+        }
+        // 上次崩溃过则暂不加载 web（AppDelegate 已弹出自报窗），避免立刻二次崩溃
+        guard !suppressWebLoad else {
+            Diagnostics.shared.log("WEB", "上次崩溃遗留：本次暂缓加载 web，待用户看完自报窗后重启")
+            return
         }
         loadHome()
     }
