@@ -63,6 +63,30 @@ function orbitIsIOS() {
 function applyPlatformGates() {
     recApplyPlatformGate();
     vrbtApplyPlatformGate();
+    iosHideDeadFeatures();
+}
+
+// iOS 专属清理：把安卓独占 / 沙盒无意义的功能从界面移除，避免用户点到没用的东西。
+// 注意：只做 display:none，不删 DOM 节点 —— app.js 对这些节点都带 null 保护，
+//   删节点会让 25 处引用在顶层抛错、全站交互失效（见 index.html 注释）。
+function iosHideDeadFeatures() {
+    if (!orbitIsIOS()) return;
+    // 1) 检查更新：iOS 无 APK 在线更新（更新走 TestFlight / App Store），
+    //    隐藏「检查更新」按钮并改一行静态说明，避免点到假的「已是最新」。
+    var verBtn = $('verCheckBtn');
+    if (verBtn) {
+        verBtn.style.display = 'none';
+        var st = $('verUpdateStatus');
+        if (st) st.innerHTML = '<span class="ver-update-ok">iOS 版通过 TestFlight 自动更新，无需手动检查</span>';
+    }
+    // 2) 本机视频目录的「手动输入媒体库路径」：iOS 沙盒下 App 只能读自己目录，
+    //    任意路径输入无意义，隐藏。
+    var mrGroup = $('localRootManualGroup');
+    if (mrGroup) mrGroup.style.display = 'none';
+    // 3) AI 生成脚本：整套本地 AI 推理管线为安卓独占（CoreML / TFLite 未移植 iOS），
+    //    首页卡片隐藏，只留已禁用的说明页入口（用户误入也只会看到「iOS 暂不支持」）。
+    var recTile = $('hmTileRecord');
+    if (recTile) recTile.style.display = 'none';
 }
 
 function itemPosterSrc(id) {
@@ -2457,9 +2481,15 @@ function renderLocalEmptyGuide(type, emptyEl) {
     var sub = $('localEmptySub');
     if (!sub) return;
 
-    sub.innerHTML = '<div class="empty-guide-text">' +
-        '安卓系统默认不允许应用直接读取手机存储，未授权的目录会显示为空。' +
-        '请授权视频所在文件夹，授权后即可在此浏览并播放。</div>';
+    if (orbitIsIOS()) {
+        sub.innerHTML = '<div class="empty-guide-text">' +
+            'iOS 不允许应用直接浏览手机存储，也没有「授权整个文件夹」这一步。' +
+            '点下面的「选择视频」，从相册或「文件」里把视频与同名脚本导入本应用媒体库即可播放。</div>';
+    } else {
+        sub.innerHTML = '<div class="empty-guide-text">' +
+            '安卓系统默认不允许应用直接读取手机存储，未授权的目录会显示为空。' +
+            '请授权视频所在文件夹，授权后即可在此浏览并播放。</div>';
+    }
 
     var row = document.createElement('div');
     row.className = 'empty-guide-actions';
@@ -2467,7 +2497,7 @@ function renderLocalEmptyGuide(type, emptyEl) {
     var btnPick = document.createElement('button');
     btnPick.className = 'tool-btn media-scan-all';
     btnPick.type = 'button';
-    btnPick.textContent = '选择视频文件夹';
+    btnPick.textContent = orbitIsIOS() ? '选择视频' : '选择视频文件夹';
     btnPick.addEventListener('click', function() {
         if (window.Orbit && typeof window.Orbit.pickFolder === 'function') {
             window.Orbit.pickFolder();
@@ -2481,6 +2511,7 @@ function renderLocalEmptyGuide(type, emptyEl) {
     btnSet.className = 'tool-btn';
     btnSet.type = 'button';
     btnSet.textContent = '打开设置';
+    if (orbitIsIOS()) btnSet.style.display = 'none';
     btnSet.addEventListener('click', function() {
         location.href = '/index.html?panel=library';
     });
@@ -5919,8 +5950,8 @@ function verBindUpdate() {
             setTimeout(function () { btn.disabled = false; }, 1500);
         });
     }
-    // 每次进入版本页自动查一次
-    if (window.Orbit && typeof window.Orbit.checkAppUpdate === 'function') {
+    // 每次进入版本页自动查一次（iOS 隐藏了检查按钮，无需自动查 —— 更新走 TestFlight）
+    if (!orbitIsIOS() && window.Orbit && typeof window.Orbit.checkAppUpdate === 'function') {
         try { window.Orbit.checkAppUpdate(); } catch (e) {}
     }
 }
