@@ -302,6 +302,25 @@ jobs:
             ORBIT_PROFILE_NAME="$PROFILE_NAME" \
             archive
 
+      # ⚠ 硬门禁（build 43/46 闪退根因防线）：手机 .ips 实锤 DYLD "Library missing"
+      #   @rpath/AMSMB2.framework —— 主二进制引用了框架、框架却没进 app bundle。
+      #   此后每版归档必须二选一：要么主二进制根本不引用（真静态），要么框架已嵌入
+      #   Frameworks/。两者都不满足就直接 fail，绝不让会闪退的包再上 TestFlight。
+      - name: 硬门禁：AMSMB2「引用了框架却没嵌入」禁止通过
+        if: steps.sig.outputs.ready == 'true'
+        run: |
+          APP="$RUNNER_TEMP/Orbit.xcarchive/Products/Applications/Orbit.app"
+          echo "=== 主二进制对 AMSMB2 的动态依赖 ==="
+          otool -L "$APP/Orbit" | grep -i amsmb2 || echo "(无 —— AMSMB2 已静态链接进主程序)"
+          if otool -L "$APP/Orbit" | grep -qi "AMSMB2.framework"; then
+            echo "主二进制引用 AMSMB2.framework → 校验嵌入"
+            test -f "$APP/Frameworks/AMSMB2.framework/AMSMB2" \
+              || { echo "!! Frameworks/AMSMB2.framework 缺失 —— 正是 build 43/46 启动闪退根因，禁止上传"; exit 1; }
+            echo "AMSMB2.framework 嵌入校验通过 ✓"
+          else
+            echo "静态链接校验通过 ✓"
+          fi
+
       # ⚠ 黑屏根治：Xcode 26 对 folder reference 的归档拷贝不可靠（build 23/24 连续两版
       #   都产出「bundle 内 web/ 存在但为空」），故 archive 之后**主动把 web 资源塞进已构建
       #   的 app bundle**，再 exportArchive 随包带走，彻底不依赖 Xcode 的资源拷贝阶段。

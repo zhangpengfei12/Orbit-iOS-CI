@@ -87,7 +87,13 @@ targets:
     dependencies:
       - package: Swifter
         product: Swifter
-      # 静态库产品（见 packages 处说明）：已本地化改写为 .static，链接进 app 主程序，
-      # 无独立 .framework、无 Embed 阶段 —— 这正是消除 build 43 dyld 启动崩溃的关键。
+      # ⚠ build 46 崩溃实锤（真机 .ips：DYLD "Library missing" @rpath/AMSMB2.framework）：
+      #   即使 Package.swift 已 sed 成 .static，Xcode 26 仍以 -dynamiclib 把它链成动态框架
+      #   （DerivedData 里产出 PackageFrameworks/AMSMB2.framework），而 XcodeGen 默认不生成
+      #   Embed 阶段 → 框架从未进 Orbit.app/Frameworks → dyld 启动即崩（43/46 同根因）。
+      #   显式 embed+codeSign 双保险：若被当动态框架则强制嵌入并随 exportArchive 签名；
+      #   若真按静态链接则 Embed 阶段无可拷产品为空操作 —— 两种世界都不会再缺框架。
       - package: AMSMB2
         product: AMSMB2
+        embed: true
+        codeSign: true
