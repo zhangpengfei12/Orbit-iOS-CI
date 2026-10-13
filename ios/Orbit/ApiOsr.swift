@@ -106,8 +106,16 @@ enum ApiOsr {
             guard let body = parseJSON(req) else { return apiError("invalid_json") }
             var cur = OrbitConfig.shared.dictionary(forKeyPath: "settings.osr")
             for (k, v) in body { cur[k] = v }
+            // 白盒诊断：记录「前端传了什么」与「写后回读是什么」。
+            // 用户反馈「改 IP 保存后仍发旧地址」——有这两行就能分清是前端没传对、还是后端没写进。
+            let inIp = body["ip"].map { "\($0)" } ?? "nil"
+            let inPort = body["port"].map { "\($0)" } ?? "nil"
+            Diagnostics.shared.log("OSR", "设置保存：收到 ip=\(inIp) port=\(inPort)")
             OrbitConfig.shared.set(cur, forKeyPath: "settings.osr")
-            OrbitConfig.shared.save()
+            let back = OrbitConfig.shared.dictionary(forKeyPath: "settings.osr")
+            let outIp = back["ip"].map { "\($0)" } ?? "nil"
+            let outPort = back["port"].map { "\($0)" } ?? "nil"
+            Diagnostics.shared.log("OSR", "设置保存：写后回读 ip=\(outIp) port=\(outPort)")
             return json(cur)
         }
 

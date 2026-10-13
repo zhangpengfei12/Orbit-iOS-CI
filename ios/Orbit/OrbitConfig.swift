@@ -44,7 +44,7 @@ final class OrbitConfig {
         lock.lock(); defer { lock.unlock() }
         let parts = path.split(separator: ".").map(String.init)
         set(value, at: parts, in: &cfg)
-        save()
+        saveLocked()   // 已持锁，走不加锁版本，避免递归加锁死锁
     }
 
     func dictionary(forKeyPath path: String) -> [String: Any] {
@@ -67,6 +67,13 @@ final class OrbitConfig {
 
     func save() {
         lock.lock(); defer { lock.unlock() }
+        saveLocked()
+    }
+
+    /// 调用方已持有 lock 时走这里（set 内部）。
+    /// ⚠ NSLock 是**非递归**锁：旧版 set 持锁后再调 save() 会二次加锁**永久死锁**，
+    ///   任何保存请求都不返回 —— 表现为「改 IP 点保存没反应 / 配置存不住」。
+    private func saveLocked() {
         do {
             let data = try JSONSerialization.data(withJSONObject: cfg, options: [.prettyPrinted])
             try data.write(to: file)
