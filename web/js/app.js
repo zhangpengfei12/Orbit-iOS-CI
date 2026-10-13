@@ -87,6 +87,13 @@ function iosHideDeadFeatures() {
     //    首页卡片隐藏，只留已禁用的说明页入口（用户误入也只会看到「iOS 暂不支持」）。
     var recTile = $('hmTileRecord');
     if (recTile) recTile.style.display = 'none';
+    // 4) 文件夹选择器：iOS 没有安卓的 SAF 系统文件夹授权，libBtnFolder（视频库「选择视频」）
+    //    与 tpPickFolder（手控触板「选择文件夹」）在 iOS 上点了只会落到不工作的文件夹页 / 无授权回调，
+    //    故在 iOS 直接隐藏，避免用户点到没用的东西。iOS 导入走「设置 → 媒体库」的相册 / 文件选择器。
+    var libFolderBtn = $('libBtnFolder');
+    if (libFolderBtn) libFolderBtn.style.display = 'none';
+    var tpFolderBtn = $('tpPickFolder');
+    if (tpFolderBtn) tpFolderBtn.style.display = 'none';
 }
 
 function itemPosterSrc(id) {
@@ -4098,6 +4105,8 @@ function toggleSmbCredentials() {
     }
 }
 
+var smbSavedPassword = '';
+
 function loadSmbSettings() {
     fetch('/api/settings/smb')
         .then(function(r){return r.json();})
@@ -4105,23 +4114,27 @@ function loadSmbSettings() {
             $('smbHost').value = d.host || '';
             $('smbShare').value = d.share || '';
             $('smbUser').value = d.username || '';
+            // 记住已保存的密码：密码框留空表示「保持不变」，保存时不再冲刷已存值
+            smbSavedPassword = d.password || '';
             $('smbPass').value = '';
-            $('smbPass').placeholder = d.hasPassword ? '已设置（留空保持不变）' : '可选';
+            $('smbPass').placeholder = d.password ? '已设置（留空保持不变）' : '可选';
             $('smbAnonymous').checked = !!d.anonymous;
             toggleSmbCredentials();
         });
 }
 
 function saveSmb() {
+    var anon = $('smbAnonymous').checked;
     fetch('/api/settings/smb', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({
             host: $('smbHost').value,
             share: $('smbShare').value,
-            username: $('smbAnonymous').checked ? '' : $('smbUser').value,
-            password: $('smbAnonymous').checked ? '' : $('smbPass').value,
-            anonymous: $('smbAnonymous').checked
+            username: anon ? '' : $('smbUser').value,
+            // 密码框留空 → 沿用已保存密码，避免整体覆盖把密码冲掉
+            password: anon ? '' : ($('smbPass').value || smbSavedPassword),
+            anonymous: anon
         })
     }).then(function() {
         var hint = $('smbHint');
@@ -4299,6 +4312,8 @@ function smbqToggleCred() {
     if ($('smbqPass')) $('smbqPass').disabled = anon;
 }
 
+var smbqSavedPassword = '';
+
 function openSmbQuickConfig() {
     fetch('/api/settings/smb')
         .then(function(r){ return r.json(); })
@@ -4308,7 +4323,7 @@ function openSmbQuickConfig() {
             if ($('smbqUser')) $('smbqUser').value = d.username || '';
             if ($('smbqDomain')) $('smbqDomain').value = d.domain || '';
             if ($('smbqAnonymous')) $('smbqAnonymous').checked = !!d.anonymous;
-            if ($('smbqPass')) { $('smbqPass').value = ''; $('smbqPass').placeholder = d.hasPassword ? '已设置（留空保持不变）' : '可选'; }
+            if ($('smbqPass')) { smbqSavedPassword = d.password || ''; $('smbqPass').value = ''; $('smbqPass').placeholder = d.password ? '已设置（留空保持不变）' : '可选'; }
             smbqToggleCred();
         })
         .catch(function(){});
@@ -4330,7 +4345,7 @@ function connectSmbQuick() {
     var share = ($('smbqShare') ? $('smbqShare').value : '').trim();
     var anonymous = $('smbqAnonymous') ? $('smbqAnonymous').checked : false;
     var user = anonymous ? '' : (($('smbqUser') ? $('smbqUser').value : '').trim());
-    var pass = anonymous ? '' : (($('smbqPass') ? $('smbqPass').value : '').trim());
+    var pass = anonymous ? '' : (($('smbqPass') ? $('smbqPass').value : '').trim() || smbqSavedPassword);
     var domain = anonymous ? '' : (($('smbqDomain') ? $('smbqDomain').value : '').trim());
     smbqCreds = { host: host, share: share, user: user, pass: pass, domain: domain, anonymous: anonymous };
     // 持久化到 SMB 设置：既供下次预填，也供同名脚本加载（findLibForRawSmb 兜底读取）

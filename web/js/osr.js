@@ -1064,7 +1064,7 @@
                     var reason = ok ? '' : apiReason(r);
                     var msg;
                     if (ok) {
-                        msg = '连接成功：指令已送达，设备应出现明显动作';
+                        msg = 'UDP 指令已发出，设备应出现明显动作（UDP 无回执，若设备毫无反应，请核对 IP / 端口、手机与设备是否处于同一 Wi‑Fi）';
                     } else if ((reason || '').indexOf('未选择串口设备') >= 0 ||
                                ($('osrSerialDevice') && !$('osrSerialDevice').value.trim())) {
                         msg = '连接失败：请先点击上方 USB 设备列表中的设备项选中它，再点连接测试';

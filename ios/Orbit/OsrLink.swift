@@ -12,6 +12,7 @@ enum OsrLink {
 
     private static var udpConn: NWConnection?
     private static var udpKey = ""
+    private static var udpReady = false
     private static let udpQueue = DispatchQueue(label: "orbit.osr.udp")
 
     static func osrSettings() -> [String: Any] {
@@ -90,21 +91,37 @@ enum OsrLink {
             udpConn?.cancel()
             udpConn = nil
             udpKey = key
+            udpReady = false
         }
         if udpConn == nil {
             guard let p = NWEndpoint.Port(rawValue: UInt16(clamping: port)), p.rawValue != 0 else {
                 return (false, "端口无效：\(port)")
             }
             let conn = NWConnection(host: NWEndpoint.Host(host), port: p, using: .udp)
+            let readySem = DispatchSemaphore(value: 0)
             conn.stateUpdateHandler = { state in
-                if case .failed(let err) = state {
+                switch state {
+                case .ready:
+                    udpReady = true
+                    readySem.signal()
+                case .failed(let err):
+                    udpReady = false
                     Diagnostics.shared.log("OSR", "UDP 连接失败：\(err)")
+                    readySem.signal()
+                case .cancelled:
+                    udpReady = false
+                default:
+                    break
                 }
             }
             conn.start(queue: udpQueue)
             udpConn = conn
+            // 首包最容易被丢：必须等连接就绪后再发，否则设备收不到（发出 ≠ 送达）
+            _ = readySem.wait(timeout: .now() + 2.0)
         }
-        guard let conn = udpConn else { return (false, "UDP 连接创建失败") }
+        guard let conn = udpConn, udpReady else {
+            return (false, "UDP 连接未就绪：设备可能不在线，或 IP / 端口不可达")
+        }
         let data = Data(payload.utf8)
         let sem = DispatchSemaphore(value: 0)
         var result = (false, "UDP 发送超时")

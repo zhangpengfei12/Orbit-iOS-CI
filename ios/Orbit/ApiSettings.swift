@@ -24,7 +24,11 @@ enum ApiSettings {
             guard let body = parseJSON(req) else {
                 return apiError("invalid_json")
             }
-            OrbitConfig.shared.set(body, forKeyPath: cfgPath)
+            // 合并写：只覆盖请求体里出现的字段，未带字段（如空密码）保留已存值，
+            // 避免整体覆盖把已保存的密码冲刷掉。对齐 /api/osr/settings 的合并语义。
+            var cur = OrbitConfig.shared.dictionary(forKeyPath: cfgPath)
+            for (k, v) in body { cur[k] = v }
+            OrbitConfig.shared.set(cur, forKeyPath: cfgPath)
             return json(["ok": true])
         }
     }
