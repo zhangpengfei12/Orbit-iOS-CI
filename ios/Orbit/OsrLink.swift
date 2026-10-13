@@ -215,7 +215,7 @@ enum NativeBridge {
             // /video/<key>（Range 206 已就绪），硬件解码通吃 H.264/HEVC，
             // 绕开 WKWebView <video> 的 hvc1/hev1 兼容坑。
             // 前端 player.js 编解码探测失败时也会把 videoName 传进来。
-            NativePlayer.shared.play(a.first?.asString ?? "")
+            NativePlayer.shared.play(key: a.first?.asString ?? "")
 
         // MARK: 姿态（触板陀螺仪 / 摇一摇）
         // ⚠ 不能留空：桥的 Proxy 兜底会让 typeof startTilt 恒为 'function'，

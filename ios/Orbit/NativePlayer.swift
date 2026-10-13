@@ -124,7 +124,7 @@ final class NativePlayer: NSObject {
         observers.append(NotificationCenter.default.addObserver(
             forName: .AVPlayerItemNewErrorLogEntry, object: item, queue: .main)
         { _ in
-            if let ev = item.accessLog().events.last {
+            if let ev = item.accessLog()?.events.last {
                 Diagnostics.shared.log("PLAY", "原生播放错误日志：\(ev.errorComment ?? "无备注")")
             }
         })
