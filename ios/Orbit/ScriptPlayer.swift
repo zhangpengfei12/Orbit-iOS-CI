@@ -480,7 +480,7 @@ final class ScriptPlayer {
             default: return 1.0   // Long / Jerk / Hops
             }
         }()
-        let amp = Int((randomChange.coerceIn(0, 100) / 100) * Float(range) * factor)
+        let amp = Int((min(max(randomChange, 0), 100) / 100) * Float(range) * factor)
         let weight: [String: Float] = ["L0": 1.0, "L1": 0.85, "L2": 0.7, "R0": 0.5, "R1": 0.5, "R2": 0.4]
 
         let targets: [String: Int]
@@ -515,7 +515,7 @@ final class ScriptPlayer {
     private func autoFreeplayBody(_ ctx: CmdContext) -> String {
         let now = nowMs()
         let freq = min(max(Double(simSpeed) / 60.0, 1.0 / 3.0), 3.0)
-        let intensity = Double(simIntensity.coerceIn(0.2, 1.0))
+        let intensity = Double(min(max(simIntensity, 0.2), 1.0))
         let sel = simSelectedIndex
         let isRandom = sel >= SIM_PATTERN_COUNT
         let autoSwitch = simAutoSwitch || isRandom
