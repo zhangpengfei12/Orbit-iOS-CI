@@ -105,7 +105,7 @@
                 <div class="lib-loading" id="libLoading" style="display:none">加载中...</div>
             </div>
 
-            <div class="lib-devstate" id="libDevState"><span class="lib-dot" id="libDot"></span><span id="libDevText">设备状态：未检测</span></div>
+            <div class="lib-devstate" id="libDevState"><span class="lib-dot" id="libDot"></span><span id="libDevText">设备连接：未检测</span></div>
         </div>
 
         <!-- ── 兼容槽（不要删！） ─────────────────────────────────────────
@@ -415,7 +415,7 @@
 
                             <div class="panel-desc" style="margin-top:12px">
                                 <b>为什么蓝牙需要 Orbit 也在头显上：</b>DeoVR / HereSphere 只有
-                                Wi‑Fi 接口（TCP 23554），<b>官方没有蓝牙通道</b>；安卓的蓝牙网络共享又要
+                                Wi‑Fi 接口（TCP 23554），<b>官方没有蓝牙通道</b>；而蓝牙网络共享需要
                                 系统级权限，普通 App 拿不到。所以手机没法用蓝牙直连头显里的 DeoVR。
                                 可行做法是头显上也装 Orbit：它用 <b>本机回环 127.0.0.1</b> 连同机的
                                 DeoVR 取时间轴，再通过蓝牙广播给手机。
@@ -638,7 +638,7 @@
                                 <label class="form-label">端口</label>
                                 <input class="form-input" id="osrPort" inputmode="numeric" placeholder="8000">
                             </div>
-                            <div class="conn-note">连上设备的 WiFi 热点后，点下方按钮打开 <code>192.168.4.1</code> 进入设备配置页（舵机零位 / 设备状态 / WiFi 配置 / 固件更新）。</div>
+                            <div class="conn-note">连上设备的 WiFi 热点后，点下方按钮打开 <code>192.168.4.1</code> 进入设备配置页，进行舵机零位校准、WiFi 配置与固件更新等设置。</div>
                             <div class="scan-action-buttons" style="margin-top:10px">
                                 <button type="button" class="tool-btn" id="osrOpenConfig">打开设备配置</button>
                             </div>
@@ -877,7 +877,7 @@
                         <!-- iOS 降级说明：/api/record/* 整条视频逐帧分析管线在 iOS 上不存在，
                              面板按钮会被 app.js 的 recApplyPlatformGate() 禁用，这里给出替代路径。 -->
                         <div class="panel-desc" id="recIosNote" style="display:none;color:#f0a63a">
-                            iOS 版暂不支持「从视频自动生成脚本」——这条链路需要解码整段视频做逐帧运动分析，iOS 端还没有对应的管线（安卓的实现在 <code>osr/ScriptRecorder.kt</code>）。<br>
+                            iOS 版暂不支持「从视频自动生成脚本」——这条链路需要解码整段视频做逐帧运动分析，iOS 端暂时还没有对应的处理管线。<br>
                             替代做法：在电脑上生成好 <code>.funscript</code>，或用现成的脚本站下载，再按<strong>「视频 + 同名 .funscript 一起导入」</strong>的方式导入本应用媒体库，播放时会自动匹配。导入步骤见上面的「本机视频目录」。
                         </div>
                         <div class="dash-actions">
@@ -1085,10 +1085,6 @@
                     </div>
                     <div class="settings-section">
                         <div class="ver-team">牛牛工坊开发团队<span class="ver-team-mark">Orbit</span></div>
-                        <div class="ver-update">
-                            <button class="ob-btn ob-btn--primary" id="verCheckBtn" type="button">检查更新</button>
-                            <div class="ver-update-status" id="verUpdateStatus"></div>
-                        </div>
                         <div class="hm-ver-body" id="verBody"></div>
                     </div>
                 </div>
@@ -1218,7 +1214,7 @@
                             <div class="hm-help-h">十、VR 一体机与 VR 盒子</div>
                             <p class="hm-help-p">在「VR 一体机」页连接外部 VR 播放器（DeoVR / HereSphere）。连接后，影片时间轴作为统一时间源，OSR 脚本与之对齐，实现“视听 + 体感”同步。首页「VR盒子」则是用手机放进 VR 眼镜盒里看，两者互不影响。</p>
                             <div class="hm-help-h">十一、关于切到后台</div>
-                            <p class="hm-help-p">iOS 与安卓不同：系统不允许应用常驻后台，切到后台或锁屏后<strong>进程会在数秒内被挂起，设备驱动随之停止</strong>。本应用已启用音频后台模式，播放带声音的影片时可在后台继续出声；但体感驱动只在<strong>前台</strong>保持连续。</p>
+                            <p class="hm-help-p">iOS 系统不允许应用常驻后台，切到后台或锁屏后<strong>进程会在数秒内被挂起，设备驱动随之停止</strong>。本应用已启用音频后台模式，播放带声音的影片时可在后台继续出声；但体感驱动只在<strong>前台</strong>保持连续。</p>
                             <p class="hm-help-p">回到前台时会自动按影片进度重新对齐，不需要手动重来。因此建议随播时保持 Orbit 在前台；若必须息屏，可在系统「设置 → 辅助功能 → 显示与文字大小 → 自动锁定」里临时设为「永不」。</p>
                             <div class="hm-help-h">十二、试用与激活</div>
                             <ul class="hm-help-list">
@@ -1230,9 +1226,8 @@
                                 <li><strong>请勿在设置里清除本应用数据</strong>：清除后机器码会变，已激活的卡密将失效。</li>
                             </ul>
                             <p class="hm-help-p">已知硬边界（本地方案只能做到这样）：Root / Magisk、改过安装包、模拟器、应用双开多用户、开了 WebView 调试，都可能绕过校验。</p>
-                            <div class="hm-help-h">十三、在线更新</div>
-                            <p class="hm-help-p">iOS 版<strong>不提供 APK 在线更新</strong>：新版本统一经 <strong>TestFlight</strong> 分发（首次需在 App Store 装一次 TestFlight 并接受邀请），也可在 App Store 里直接更新。「版本信息」页的「检查更新」只用于确认当前版本号。</p>
-                            <p class="hm-help-p">「版本信息」页会列出真实发过的全部版本与更新点，更新记录里出现的每个版本号都对应一个正式包。</p>
+                            <div class="hm-help-h">十三、版本与更新</div>
+                            <p class="hm-help-p">iOS 版的新版本统一经 <strong>TestFlight</strong> 分发：首次需在 App Store 安装 TestFlight 并接受邀请，之后在 TestFlight 里即可更新（也可在 App Store 中更新）。「版本信息」页会列出真实发过的全部版本与更新点，每个版本号都对应一个正式包，当前版本号也在页首标明。</p>
                             <div class="hm-help-h">十四、常见问题</div>
                             <ul class="hm-help-list">
                                 <li><strong>首页显示"离线"</strong>：尚未连上设备，先到「设备」完成连接测试。</li>

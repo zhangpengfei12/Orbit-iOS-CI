@@ -68,19 +68,6 @@
         toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2200);
     }
 
-    /* ---------- 首页「设备状态」磁贴：打开设备自带的配置页 ----------
-       AP 配网默认 192.168.4.1；配网后做设备校准则填设备拿到的静态 IP。 */
-    var devCfgBtn = $('hmDevCfgBtn');
-    if (devCfgBtn) {
-        devCfgBtn.addEventListener('click', function () {
-            if (window.Orbit && typeof window.Orbit.openDeviceConfig === 'function') {
-                window.Orbit.openDeviceConfig('192.168.4.1');
-            } else {
-                showToast('请在 App 内打开设备配置页（192.168.4.1）');
-            }
-        });
-    }
-
     var soonBtns = document.querySelectorAll('.hm-tile[data-soon]');
     Array.prototype.forEach.call(soonBtns, function (btn) {
         btn.addEventListener('click', function () {

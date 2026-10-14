@@ -66,28 +66,20 @@ function applyPlatformGates() {
     iosHideDeadFeatures();
 }
 
-// iOS 专属清理：把安卓独占 / 沙盒无意义的功能从界面移除，避免用户点到没用的东西。
+// iOS 专属清理：把沙盒无意义 / 暂未实现的功能从界面移除，避免用户点到没用的东西。
 // 注意：只做 display:none，不删 DOM 节点 —— app.js 对这些节点都带 null 保护，
 //   删节点会让 25 处引用在顶层抛错、全站交互失效（见 index.html 注释）。
 function iosHideDeadFeatures() {
     if (!orbitIsIOS()) return;
-    // 1) 检查更新：iOS 无 APK 在线更新（更新走 TestFlight / App Store），
-    //    隐藏「检查更新」按钮并改一行静态说明，避免点到假的「已是最新」。
-    var verBtn = $('verCheckBtn');
-    if (verBtn) {
-        verBtn.style.display = 'none';
-        var st = $('verUpdateStatus');
-        if (st) st.innerHTML = '<span class="ver-update-ok">iOS 版通过 TestFlight 自动更新，无需手动检查</span>';
-    }
-    // 2) 本机视频目录的「手动输入媒体库路径」：iOS 沙盒下 App 只能读自己目录，
+    // 1) 本机视频目录的「手动输入媒体库路径」：iOS 沙盒下 App 只能读自己目录，
     //    任意路径输入无意义，隐藏。
     var mrGroup = $('localRootManualGroup');
     if (mrGroup) mrGroup.style.display = 'none';
-    // 3) AI 生成脚本：整套本地 AI 推理管线为安卓独占（CoreML / TFLite 未移植 iOS），
+    // 2) AI 生成脚本：整套本地 AI 推理管线未移植 iOS，
     //    首页卡片隐藏，只留已禁用的说明页入口（用户误入也只会看到「iOS 暂不支持」）。
     var recTile = $('hmTileRecord');
     if (recTile) recTile.style.display = 'none';
-    // 4) 文件夹选择器：iOS 没有安卓的 SAF 系统文件夹授权，libBtnFolder（视频库「选择视频」）
+    // 3) 文件夹选择器：iOS 没有系统文件夹授权，libBtnFolder（视频库「选择视频」）
     //    与 tpPickFolder（手控触板「选择文件夹」）在 iOS 上点了只会落到不工作的文件夹页 / 无授权回调，
     //    故在 iOS 直接隐藏，避免用户点到没用的东西。iOS 导入走「设置 → 媒体库」的相册 / 文件选择器。
     var libFolderBtn = $('libBtnFolder');
@@ -2494,7 +2486,7 @@ function renderLocalEmptyGuide(type, emptyEl) {
             '点下面的「选择视频」，从相册或「文件」里把视频与同名脚本导入本应用媒体库即可播放。</div>';
     } else {
         sub.innerHTML = '<div class="empty-guide-text">' +
-            '安卓系统默认不允许应用直接读取手机存储，未授权的目录会显示为空。' +
+            '系统默认不允许应用直接读取设备存储，未授权的目录会显示为空。' +
             '请授权视频所在文件夹，授权后即可在此浏览并播放。</div>';
     }
 
@@ -5504,7 +5496,7 @@ function refreshLibDev() {
     if (!txt) return;
     var dot = $('libDot');
     function paint(state, on, err) {
-        txt.textContent = '\u8bbe\u5907\u72b6\u6001\uff1a' + state;
+        txt.textContent = '\u8bbe\u5907\u8fde\u63a5\uff1a' + state;
         if (dot) {
             dot.classList.toggle('on', !!on);
             dot.classList.toggle('err', !!err);
@@ -5921,7 +5913,6 @@ function verRender() {
         html += '</ul></div>';
     });
     body.innerHTML = html;
-    verBindUpdate();
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -5934,95 +5925,6 @@ function verRender() {
 
    顶层页面只负责转发：真正维护播放时钟的是内嵌播放器 iframe（原生只能对主框架求值）。
    ───────────────────────────────────────────────────────────── */
-/* ─────────────────────────────────────────────────────────────
-   在线更新（2026-09-29：版本页「检查更新 / 立即更新」）
-   原生桥 Orbit.checkAppUpdate() 查更新（主源腾讯云 CloudBase 静态托管，失败自动降级 GitHub Releases），
-   Orbit.downloadAndInstallApk(url) 下载并安装；
-   结果经 window.__onUpdateChecked / __onUpdateProgress / __onUpdateError 回传。
-   ───────────────────────────────────────────────────────────── */
-var verCheckBound = false;
-var verUpdateUrl = '';
-function verBindUpdate() {
-    var btn = $('verCheckBtn');
-    if (btn && !verCheckBound) {
-        verCheckBound = true;
-        btn.addEventListener('click', function () {
-            var st = $('verUpdateStatus');
-            // 如果当前按钮是「立即更新」，统一走下载逻辑
-            if (btn.textContent === '立即更新' && verUpdateUrl) {
-                btn.disabled = true;
-                if (st) st.innerHTML = '<span class="ver-update-hint">开始下载更新包…</span>';
-                if (window.Orbit && typeof window.Orbit.downloadAndInstallApk === 'function') {
-                    try { window.Orbit.downloadAndInstallApk(verUpdateUrl); } catch (e) {}
-                }
-                return;
-            }
-            if (st) st.innerHTML = '<span class="ver-update-hint">正在检查更新…</span>';
-            btn.disabled = true;
-            if (window.Orbit && typeof window.Orbit.checkAppUpdate === 'function') {
-                try { window.Orbit.checkAppUpdate(); } catch (e) {}
-            }
-            setTimeout(function () { btn.disabled = false; }, 1500);
-        });
-    }
-    // 每次进入版本页自动查一次（iOS 隐藏了检查按钮，无需自动查 —— 更新走 TestFlight）
-    if (!orbitIsIOS() && window.Orbit && typeof window.Orbit.checkAppUpdate === 'function') {
-        try { window.Orbit.checkAppUpdate(); } catch (e) {}
-    }
-}
-window.__onUpdateChecked = function (res) {
-    var st = $('verUpdateStatus');
-    var btn = $('verCheckBtn');
-    if (!st) return;
-    if (btn) {
-        btn.disabled = false;
-        btn.textContent = '检查更新';
-    }
-    verUpdateUrl = '';
-    if (!res || res.error) {
-        var err = (res && res.error) ? String(res.error) : '未知错误';
-        // GitHub 仓库还没发布过任何 Release 时，/releases/latest 返回 404 —— 这是正常状态，不算故障
-        // 404 = 更新服务器上还没有任何版本（新环境刚建好时是正常的），不是故障
-        if (err.indexOf('404') >= 0) {
-            st.innerHTML = '<span class="ver-update-hint">更新服务器还没有发布过在线更新版本（404）。发布后这里即可一键检查并更新。</span>';
-        } else {
-            st.innerHTML = '<span class="ver-update-err">暂时无法连接更新服务器，请检查网络后重试（' + verEsc(err) + '）</span>';
-        }
-        return;
-    }
-    if (!res.available) {
-        // note：iOS 侧用来说明「更新走 TestFlight / App Store」，安卓不会带这个字段。
-        st.innerHTML = '<span class="ver-update-ok">已是最新版本（v' + verEsc(res.current || '') + '）'
-            + (res.note ? '　' + verEsc(res.note) : '') + '</span>';
-        return;
-    }
-    verUpdateUrl = res.url;
-    st.innerHTML = '<span class="ver-update-new">发现新版本 v' + verEsc(res.latest) + '，可在线更新到最新版</span>';
-    if (btn) {
-        btn.textContent = '立即更新';
-        btn.disabled = false;
-    }
-};
-window.__onUpdateProgress = function (p) {
-    var st = $('verUpdateStatus');
-    var btn = $('verCheckBtn');
-    if (btn) btn.disabled = true;
-    if (!st) return;
-    if (p.phase === 'downloading') {
-        var pct = p.percent || 0;
-        st.innerHTML = '<span class="ver-update-hint">正在下载更新包… ' + pct + '%</span>'
-            + '<div class="ver-update-bar"><div class="ver-update-bar-fill" style="width:' + pct + '%"></div></div>';
-    } else if (p.phase === 'installing') {
-        st.innerHTML = '<span class="ver-update-hint">下载完成，正在调起安装…</span>';
-    }
-};
-window.__onUpdateError = function (e) {
-    var st = $('verUpdateStatus');
-    var btn = $('verCheckBtn');
-    if (st) st.innerHTML = '<span class="ver-update-err">更新失败：' + verEsc(e ? e.message : '未知错误') + '</span>';
-    if (btn) { btn.disabled = false; btn.textContent = '检查更新'; }
-    verUpdateUrl = '';
-};
 
 window.__orbitBg = function (bg) {
     var f = $('libFrame');

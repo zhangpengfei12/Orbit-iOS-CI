@@ -124,15 +124,16 @@
              圆角方（VR一体机）
              圆形（自动/手动）  描边环（其余）
              历史合并/去重见下，最新顺序以本注释为准。
-             重排（2026-09-19 第十一轮）：按「设备 → 设备状态 → 自动 → 手动 → VR盒子 → VR一体机 →
+             重排（2026-09-19 第十一轮）：按「设备 → 自动 → 手动 → VR盒子 → VR一体机 →
                脚本播放 → 脚本生成 → 帮助 → 版本信息 → 网络共享」排列 ——
-               把最常用的「设备/设备状态」提到最前，VR 两个入口相邻，脚本两个入口相邻，
+               把最常用的「设备」提到最前，VR 两个入口相邻，脚本两个入口相邻，
                网络共享（低频，配置一次即可）沉到最后。
                （2026-09-26 第十二轮：「手控触板」插到「脚本生成」之后，共 12 块。）
                同步动作：VR同步改名为 VR一体机（磁贴、侧栏项、面板标题、帮助章节一起改）；
-               设备 / 设备状态 / 网络共享换用新图标（ic-device / ic-devstat / ic-share）；
+               设备 / 网络共享换用新图标（ic-device / ic-share）；
                「版本信息」由首页浮层改为独立页面 ?panel=ver（button → a）。
-               （2026-09-29 第十三轮：插入「脚本编辑」，排在「手控触板」之后，共 13 块。）
+               （2026-09-29 第十三轮：插入「脚本编辑」，排在「手控触板」之后，共 13 块；
+                2026-10-14：「设备状态」磁贴（设备自带配网页入口）已从首页移除。）
              ⚠️ 改条数或顺序要同步 license_check.py 第 2 节的磁贴数量与 data-lic 合计断言。 -->
         <nav class="hm-grid">
             <!-- 1 设备：连接 OSR 硬件（链路状态实时显示在副标题里） -->
@@ -143,13 +144,6 @@
                 <span class="hm-text"><span class="hm-t">设备</span><span class="hm-s"><span class="hm-dot" id="hmDot"></span><span id="hmDevState">离线</span></span></span>
             </a>
 
-            <!-- 2 设备状态：设备自带的配网 / 校准页（192.168.4.1） -->
-            <button class="hm-tile" data-lic="1" type="button" id="hmDevCfgBtn">
-                <span class="hm-icon hm-icon--ring" style="--c:#4dc9ff">
-                    <svg class="hm-glyph" viewBox="0 0 24 24"><use href="#ic-devstat"/></svg>
-                </span>
-                <span class="hm-text"><span class="hm-t">设备状态</span><span class="hm-s">wifi配网与校准</span></span>
-            </button>
 
             <!-- 3 自动：自由演奏 -->
             <a class="hm-tile" data-lic="1" href="/index.html?panel=auto">
