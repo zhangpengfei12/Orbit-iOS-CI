@@ -488,11 +488,11 @@ final class ScriptPlayer {
         case 3: // Orbit：圆周轨迹
             let theta = Double(randomStep) * (2 * Double.pi / 24)
             targets = [
-                "L0": center + Int(amp * sin(theta)),
-                "L1": center + Int(amp * cos(theta)),
-                "L2": center + Int(amp * 0.4 * sin(2 * theta)),
-                "R0": center + Int(amp * 0.5 * sin(theta)),
-                "R1": center + Int(amp * 0.5 * cos(theta)),
+                "L0": center + Int(Double(amp) * sin(theta)),
+                "L1": center + Int(Double(amp) * cos(theta)),
+                "L2": center + Int(Double(amp) * 0.4 * sin(2 * theta)),
+                "R0": center + Int(Double(amp) * 0.5 * sin(theta)),
+                "R1": center + Int(Double(amp) * 0.5 * cos(theta)),
                 "R2": center
             ]
         case 2, 4: // Jerk / Hops：每轴独立随机落点
