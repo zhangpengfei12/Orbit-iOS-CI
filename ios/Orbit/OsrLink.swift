@@ -11,6 +11,13 @@ import UIKit
 enum OsrLink {
 
     private static let udpQueue = DispatchQueue(label: "orbit.osr.udp")
+    private static let udpLock = NSLock()
+    private static var udpConn: NWConnection?
+    private static var udpKey = ""
+    private static var udpReady = false
+    /// 最近一次 UDP 成功发出的时间戳（首页链路状态 / 诊断用；UDP 无回执，用它当「能发」的证据）
+    private static var lastUdpOkTime: TimeInterval = 0
+    private static var lastUdpError: String?
 
     static func osrSettings() -> [String: Any] {
         OrbitConfig.shared.dictionary(forKeyPath: "settings.osr")
@@ -80,56 +87,102 @@ enum OsrLink {
 
     // MARK: - UDP（WiFi）
 
-    /// UDP 发送（NWConnection）。对齐安卓 OsrConnections.sendUdpMessage：每条指令
-    /// 都新建一条 UDP 连接、等就绪后再发、发完即 cancel —— 绝不缓存复用。
-    /// 此前缓存复用同一条连接，连接一旦失效（如 iOS 静默丢包后进入 failed）就永远卡死，
-    /// 后续所有发送都打在坏对象上；安卓每次新建所以无此问题。此处同样每次新建，
-    /// 从根上消除「死连接」整类问题，也不再依赖任何跨线程共享状态。
-    /// ⚠ UDP 无回执：发出即视为成功，不表示设备收到（iOS 本地网络权限被拒时系统静默丢包，
-    ///   连接仍可能 ready，需靠连接测试里的 TCP 探测与诊断页定位）。
+    /// UDP 发送（NWConnection）。
+    /// ⚠ 性能关键：自动播放每 40ms 一次高频下发，若每条指令都新建并拆一条连接会让
+    ///   设备运动明显卡顿（实测不如安卓流畅）。故**按 host:port 缓存复用同一条连接**，
+    ///   仅在连接进入 failed（网络接口变化 / iOS 静默丢包后失效）时弃掉、下次发送重建。
+    ///   这与安卓「每次新建 DatagramSocket」在效果上等价：安卓新建开销极低，iOS 的
+    ///   NWConnection 新建+start+cancel 开销高，必须复用；同时保留了「首包等 .ready
+    ///   再发」与「死连接自愈」两道修正（build 55/61 已各自修过）。
+    /// ⚠ UDP 无回执：连接 ready 即视为可发（不表示设备收到）；本地网络权限被拒时连接仍
+    ///   可能 ready，需靠连接测试的 TCP 探测与诊断页定位。
     static func sendUdp(host: String, port: Int, payload: String) -> (ok: Bool, detail: String) {
         guard let p = NWEndpoint.Port(rawValue: UInt16(clamping: port)), p.rawValue != 0 else {
             return (false, "端口无效：\(port)")
         }
-        let conn = NWConnection(host: NWEndpoint.Host(host), port: p, using: .udp)
-        let readySem = DispatchSemaphore(value: 0)
-        var ready = false
-        conn.stateUpdateHandler = { state in
-            switch state {
-            case .ready:
-                ready = true
-                readySem.signal()
-            case .waiting(let err):
-                // 本地网络权限被拒 / 无路由 / 接口未就绪时连接停在 waiting：
-                // 系统虽自动重试，但包出不了网卡——暴露到诊断页
-                Diagnostics.shared.log("OSR", "UDP 连接等待（无路由或本地网络权限受限）：\(err)")
-            case .failed(let err):
-                Diagnostics.shared.log("OSR", "UDP 连接失败：\(err)")
-                readySem.signal()
-            default:
-                break
+        let key = "\(host):\(port)"
+        // 换目标或连接已失效 → 重建
+        udpLock.lock()
+        if udpKey != key || udpConn == nil {
+            udpConn?.cancel()
+            udpConn = nil
+            udpKey = key
+            udpReady = false
+        }
+        let needBuild = (udpConn == nil)
+        udpLock.unlock()
+
+        if needBuild {
+            let newConn = NWConnection(host: NWEndpoint.Host(host), port: p, using: .udp)
+            let readySem = DispatchSemaphore(value: 0)
+            var gotReady = false
+            newConn.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    udpLock.lock(); udpReady = true; udpLock.unlock()
+                    gotReady = true
+                    readySem.signal()
+                case .waiting(let err):
+                    // 本地网络权限被拒 / 无路由 / 接口未就绪：连接停在 waiting，包出不了网卡
+                    Diagnostics.shared.log("OSR", "UDP 连接等待（无路由或本地网络权限受限）：\(err)")
+                case .failed(let err):
+                    // 连接已死：弃缓存让下次发送重建（避免死连接复用，build 57 的坑）
+                    udpLock.lock(); udpReady = false; udpConn = nil; udpKey = ""; udpLock.unlock()
+                    Diagnostics.shared.log("OSR", "UDP 连接失败：\(err)")
+                    readySem.signal()
+                case .cancelled:
+                    udpLock.lock(); udpReady = false; udpLock.unlock()
+                default:
+                    break
+                }
+            }
+            newConn.start(queue: udpQueue)
+            udpLock.lock(); udpConn = newConn; udpLock.unlock()
+            _ = readySem.wait(timeout: .now() + 2.0)
+            if !gotReady {
+                newConn.cancel()
+                udpLock.lock(); udpConn = nil; udpKey = ""; udpReady = false; udpLock.unlock()
+                return (false, "UDP 连接未就绪：设备可能不在线、IP / 端口不可达，或 iOS 本地网络权限未放行（设置 → 隐私与安全性 → 本地网络 → Orbit）")
             }
         }
-        conn.start(queue: udpQueue)
-        _ = readySem.wait(timeout: .now() + 2.0)
-        guard ready else {
-            conn.cancel()
-            return (false, "UDP 连接未就绪：设备可能不在线、IP / 端口不可达，或 iOS 本地网络权限未放行（设置 → 隐私与安全性 → 本地网络 → Orbit）")
+
+        // 取已就绪的连接（可能刚建好，也可能缓存复用）
+        udpLock.lock()
+        let active = udpConn
+        let ready = udpReady
+        udpLock.unlock()
+        guard let conn = active, ready else {
+            return (false, "UDP 连接未就绪")
         }
         let data = Data(payload.utf8)
-        let sem = DispatchSemaphore(value: 0)
-        var result = (false, "UDP 发送超时")
+        // 已就绪连接：投递即走，不阻塞等 contentProcessed（UDP 无回执，且高频自动播放下
+        // 等 completion 会拖慢下发节奏、造成设备卡顿）。结果以后台回调更新链路状态。
         conn.send(content: data, completion: .contentProcessed { error in
+            udpLock.lock()
             if let error {
-                result = (false, "UDP 发送失败：\(error)")
+                lastUdpError = "\(error)"
             } else {
-                result = (true, "UDP 已发送")
+                lastUdpOkTime = Date().timeIntervalSince1970
+                lastUdpError = nil
             }
-            sem.signal()
+            udpLock.unlock()
         })
-        _ = sem.wait(timeout: .now() + 2.0)
-        conn.cancel()
-        return result
+        // 同步打一次成功标记，让首页「已连接」立刻可见（UDP 无回执，发出即视为成功）
+        udpLock.lock(); lastUdpOkTime = Date().timeIntervalSince1970; udpLock.unlock()
+        return (true, "UDP 已发送")
+    }
+
+    /// 首页「设备」磁贴用的链路状态：UDP 无回执，用「近 30s 是否成功发出」当「能发」的证据。
+    static func udpLinkState() -> String {
+        udpLock.lock(); defer { udpLock.unlock() }
+        if Date().timeIntervalSince1970 - lastUdpOkTime < 30 { return "connected" }
+        return "idle"
+    }
+
+    /// 最近一次 UDP 发送错误（首页 / 设备页错误提示用；成功发出后为 nil）。
+    static var udpLastError: String? {
+        udpLock.lock(); defer { udpLock.unlock() }
+        return lastUdpError
     }
 
     // MARK: - JSON 取值辅助（JSONSerialization 出来的 NSNumber 兼容处理）

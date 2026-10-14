@@ -117,6 +117,21 @@ final class ScriptPlayer {
         return script != nil
     }
 
+    /// 首页「设备」磁贴判定运行中态用：返回当前生效的运动模式。
+    func motionMode() -> String {
+        lock.lock(); defer { lock.unlock() }
+        if !autoMode.isEmpty { return autoMode }            // sine / random / freeplay
+        if dashOn { return "dash" }
+        if syncEnabled && playing && script != nil { return "script" }
+        return "idle"
+    }
+
+    /// 脚本播放时钟是否在走（设备页播放按钮态同步用）。
+    func isPlaying() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return playing
+    }
+
     // MARK: - 对外：播放控制
 
     /// scriptControl：play / pause / stop（对齐安卓 OsrManager.scriptControl）。

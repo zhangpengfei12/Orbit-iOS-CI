@@ -85,12 +85,29 @@ enum ApiOsr {
                          "target": "\(host):\(port)", "tcp": tcp])
         }
 
-        // ── 真实链路状态（首页「设备」磁贴副标题的依据）──
+        // ── 真实链路状态（首页「设备」磁贴 + 设备页状态共用）──
+        // 字段对齐前端：home.js 读 linkState / motionMode / lastSendError；
+        // osr.js.refreshStatus 读 linkState / motionMode / lastSendError / clockPlaying。
+        // ⚠ 之前只回 connected / connectionType，缺 linkState → 首页永远跌进 default 显示
+        //   「未连接」（OSR 面板读的是 connected 所以正常，首页才错）。
         server.get["/api/osr/status"] = { _ in
             let d = OsrLink.osrSettings()
             let type = OsrLink.asStr(d["connectionType"], "UDP")
-            let connected = (type == "BluetoothSerial") ? BtLink.shared.isConnected : true
-            return json(["ok": true, "connected": connected, "connectionType": type])
+            let linkState: String
+            if type == "BluetoothSerial" {
+                linkState = BtLink.shared.isConnected ? "connected" : "disconnected"
+            } else {
+                linkState = OsrLink.udpLinkState()
+            }
+            return json([
+                "ok": true,
+                "connectionType": type,
+                "linkState": linkState,
+                "connected": (linkState == "connected"),
+                "lastSendError": OsrLink.udpLastError ?? "",
+                "motionMode": ScriptPlayer.shared.motionMode(),
+                "clockPlaying": ScriptPlayer.shared.isPlaying()
+            ])
         }
 
         // ── 设置读取：前端进面板时 fillForm 依赖它回填（osr.js:1273/1279）。
