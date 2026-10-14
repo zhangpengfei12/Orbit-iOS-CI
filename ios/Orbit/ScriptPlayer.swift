@@ -39,12 +39,36 @@ final class ScriptPlayer {
     private var syncEnabled = false
 
     // ── 自动模式（playmode）──
+    // ⚠ 对齐安卓 OsrManager：freeplay = SimPattern 7 图案 × 6 轴 + 渐变过渡 +
+    //   图案选择/自动轮换；sine = 6 轴正弦相位差 120°；random = TestStrokeMode 5 笔划。
+    //   旧版这里是「单轴 L0 三角波」占位实现 —— 用户实测「自动播放不如安卓流畅」的根因。
     private var autoMode: String = ""      // "" | "sine" | "random" | "freeplay"
+
+    // sine（对齐安卓 startSine：仅强度参数，固定 0.4Hz）
     private var autoIntensity: Float = 0.6
-    private var autoSpeed: Float = 50
-    private var autoDuration: Float = 0.3
-    private var sinePhase: Float = 0
-    private var randomPhase: Float = 0
+    private var sineStartMs: Double = 0
+
+    // freeplay（对齐安卓 simSpeed / simIntensity / simDuration / simAutoSwitch / simSelectedIndex）
+    private var simSpeed: Float = 50
+    private var simIntensity: Float = 0.7
+    private var simDuration: Float = 0.3
+    private var simAutoSwitch: Bool = true
+    private var simSelectedIndex: Int = 0
+
+    // random（对齐安卓 randomMode / randomChange / randomFreq）
+    private var strokeMode: Int = 1        // TestStrokeMode：0 Short / 1 Long / 2 Jerk / 3 Orbit / 4 Hops
+    private var randomChange: Float = 30
+    private var randomFreq: Int = 50
+
+    // 运行态（对齐安卓 runSimulationLoop / runRandomLoop 的循环局部变量，跨 tick 保持）
+    private var activeIdx: Int = 0
+    private var patternStartMs: Double = 0
+    private var transStartMs: Double = 0
+    private var fromTargets: [String: Int] = [:]
+    private var livePos: [String: Int] = AXIS_NAMES.reduce(into: [:]) { $0[$1] = AXIS_VALUE_MAX / 2 }
+    private var randomStep: Int = 0
+    private var randomDir: Int = 1
+    private var randomCarryMs: Double = 0
 
     // ── 独立冲刺 ──
     private var dashOn = false
@@ -203,14 +227,38 @@ final class ScriptPlayer {
         return ["ok": true, "on": dashOn, "speed": dashSpeed, "amp": dashAmp]
     }
 
-    /// 自动模式：sine / random / freeplay / stop。
-    /// iOS 上做简化实现——三角/正弦波驱动 L0，参数沿用安卓字段，够覆盖「设备页自动档」。
-    func setAutoMode(_ mode: String, intensity: Float, speed: Float, duration: Float) {
+    /// 自动模式：sine / random / freeplay / stop（对齐安卓 startSine / startRandom / startFreePlay）。
+    func setAutoMode(_ mode: String, intensity: Float, speed: Float, duration: Float,
+                     autoSwitch: Bool = true, selectedIndex: Int = 0,
+                     strokeMode m: Int = 1, change: Float = 30, freq: Int = 50) {
         lock.lock()
         autoMode = mode
         autoIntensity = intensity
-        autoSpeed = speed
-        autoDuration = duration > 0 ? duration : 0.3
+        if mode == "sine" {
+            sineStartMs = nowMs()
+        } else if mode == "random" {
+            strokeMode = m
+            randomChange = change
+            randomFreq = freq
+            randomStep = 0
+            randomDir = 1
+            randomCarryMs = 0
+        } else if mode == "freeplay" {
+            simSpeed = speed
+            simIntensity = intensity
+            simDuration = duration
+            simAutoSwitch = autoSwitch
+            simSelectedIndex = selectedIndex
+            // 对齐安卓 startFreePlay：sel >= 图案数 = 随机全场（任意图案起步），否则用所选图案
+            if selectedIndex >= SIM_PATTERN_COUNT || selectedIndex < 0 {
+                activeIdx = Int.random(in: 0..<SIM_PATTERN_COUNT)
+            } else {
+                activeIdx = selectedIndex
+            }
+            patternStartMs = nowMs()
+            transStartMs = patternStartMs
+            fromTargets = livePos
+        }
         lock.unlock()
         if mode == "stop" {
             stopLoop()
@@ -220,13 +268,48 @@ final class ScriptPlayer {
         }
     }
 
-    func stopMotion() {
+    /// 运行中实时更新参数（不重启循环、不重置图案相位，对齐安卓 updateSine / updateRandom / updateFreePlay）。
+    /// 图案切换（selectedIndex 变化）由 tick 里的 sel != activeIdx 分支自然处理。
+    func updateAutoMode(_ mode: String, intensity: Float, speed: Float, duration: Float,
+                        autoSwitch: Bool = true, selectedIndex: Int = 0,
+                        strokeMode m: Int = 1, change: Float = 30, freq: Int = 50) {
+        lock.lock()
+        switch mode {
+        case "sine":
+            autoIntensity = intensity
+        case "random":
+            strokeMode = m
+            randomChange = change
+            randomFreq = freq
+        case "freeplay":
+            simSpeed = speed
+            simIntensity = intensity
+            simDuration = duration
+            simAutoSwitch = autoSwitch
+            simSelectedIndex = selectedIndex
+        default:
+            break
+        }
+        lock.unlock()
+    }
+
+    /// 停止自动运动。home=true 时六轴缓动回中位（对齐安卓 stopMotion(home=true)：
+    /// 自动模式点「停止」设备回到初始位置，避免停在最后动作点）；进后台的清理传 false。
+    func stopMotion(home: Bool = true) {
         lock.lock()
         autoMode = ""
         dashOn = false
         dashPhases.removeAll()
         lock.unlock()
         stopLoop()
+        guard home else { return }
+        let ctx = OsrLink.cmdContext()
+        var body = ""
+        for axis in AXIS_NAMES {
+            body += buildAxisPosCommand(ctx, axis, AXIS_VALUE_MAX / 2, 600)
+            livePos[axis] = AXIS_VALUE_MAX / 2
+        }
+        OsrLink.dispatch(body)
     }
 
     // MARK: - 时钟
@@ -307,8 +390,7 @@ final class ScriptPlayer {
         let dAmp = dashAmp
         let mode = autoMode
         let intensity = autoIntensity
-        let aSpeed = autoSpeed
-        let aDur = autoDuration
+        // freeplay / random 运行态的读写都在本锁内（tick 由专用串行队列驱动，无并发 tick）
         lock.unlock()
 
         // ① 独立冲刺：与脚本并存时冲刺接管 L0（安卓 dashRaw 语义）
@@ -323,10 +405,16 @@ final class ScriptPlayer {
             body += buildAxisCommandsFromFunscript(ctx, sc, currentPlaybackMs())
         }
 
-        // ③ 自动模式（无脚本时也能让设备动起来）
+        // ③ 自动模式（无脚本时也能让设备动起来）——完整移植安卓三模式引擎
         if !mode.isEmpty && mode != "stop" && !dash {
-            body += autoCommand(ctx, mode: mode, elapsed: elapsed,
-                                intensity: intensity, speed: aSpeed, duration: aDur)
+            switch mode {
+            case "sine":
+                body += autoSineBody(ctx, intensity: intensity)
+            case "random":
+                body += autoRandomBody(ctx, elapsed: elapsed)
+            default: // freeplay
+                body += autoFreeplayBody(ctx)
+            }
         }
 
         // ④ 旋转 / 摆动：只在播放态推进相位
@@ -339,32 +427,136 @@ final class ScriptPlayer {
         OsrLink.dispatch(full)
     }
 
-    /// 自动模式指令：正弦 / 随机 / 自由发挥统一用「L0 三角波 + 强度缩放」生成。
-    private func autoCommand(_ ctx: CmdContext, mode: String, elapsed: Int64,
-                             intensity: Float, speed: Float, duration: Float) -> String {
-        var phase: Float
-        switch mode {
-        case "sine":
-            sinePhase += Float(elapsed) * max(speed, 1) / 60000.0
-            if sinePhase > 1 { sinePhase -= 1 }
-            phase = sinePhase
-        case "random":
-            // 伪随机：相位按速度推进后取正弦叠加，避免真正随机导致的跳变伤设备
-            randomPhase += Float(elapsed) * max(speed, 1) / 60000.0
-            if randomPhase > 1 { randomPhase -= 1 }
-            phase = (randomPhase + 0.33).truncatingRemainder(dividingBy: 1)
-        default: // freeplay
-            sinePhase += Float(elapsed) / max(duration * 1000, 1)
-            if sinePhase > 1 { sinePhase -= 1 }
-            phase = sinePhase
+    // MARK: - 自动模式引擎（完整移植安卓 OsrManager.runSineLoop / runRandomLoop / runSimulationLoop）
+
+    /// 6 轴目标一次性合并成一条指令下发（对齐安卓 dispatchTargets：
+    /// 逐轴单独发会成倍放大发包开销，合并后一帧一次 send，帧率才有保障）。
+    private func dispatchTargets(_ ctx: CmdContext, _ targets: [String: Int], _ durationMs: Int64) -> String {
+        var entries: [(String, Int)] = []
+        for axis in AXIS_NAMES {
+            guard let p = targets[axis] else { continue }
+            let v = min(max(p, 0), AXIS_VALUE_MAX)
+            livePos[axis] = v
+            entries.append((axis, v))
         }
-        let tri: Float = (phase < 0.5) ? phase * 2 : 2 - phase * 2
-        let cfg = ctx.axisParams["L0"] ?? AxisParamConfig()
-        let pct = clamp(Int(tri * intensity * 100), 0, 100)
-        let out = scaleByAmplitude(mapAxisPositionToOutput(pct, cfg), 100)
-        var sb = ""
-        appendAxisCommand(&sb, "L0", out, RESAMPLE_MS, cfg, ctx)
-        return sb
+        guard !entries.isEmpty else { return "" }
+        return buildAxesPosCommand(ctx, entries, durationMs)
+    }
+
+    /// sine：对齐安卓 runSineLoop —— 固定 0.4Hz，L 组三轴相位差 120°，
+    /// R 组 0.3 倍幅度同相位差，I60 缓动。安卓的 sine 本就没有速度参数。
+    private func autoSineBody(_ ctx: CmdContext, intensity: Float) -> String {
+        let t = (nowMs() - sineStartMs) / 1000.0
+        let phase = 2 * Double.pi * 0.4 * t
+        let c = AXIS_VALUE_MAX / 2
+        let amp = Double(min(max(intensity, 0), 1)) * Double(AXIS_VALUE_MAX / 2) * 0.9
+        let p2 = phase + 2 * Double.pi / 3
+        let p4 = phase + 4 * Double.pi / 3
+        let targets: [String: Int] = [
+            "L0": c + Int(amp * sin(phase)),
+            "L1": c + Int(amp * sin(p2)),
+            "L2": c + Int(amp * sin(p4)),
+            "R0": c + Int(amp * 0.3 * sin(phase)),
+            "R1": c + Int(amp * 0.3 * sin(p2)),
+            "R2": c + Int(amp * 0.3 * sin(p4))
+        ]
+        return dispatchTargets(ctx, targets, 60)
+    }
+
+    /// random：对齐安卓 runRandomLoop —— 5 种笔划（Short/Long/Jerk/Orbit/Hops），
+    /// 帧间隔 randomFreq(20-500ms)，用 carry 累计适配 40ms tick。
+    private func autoRandomBody(_ ctx: CmdContext, elapsed: Int64) -> String {
+        randomCarryMs += Double(elapsed)
+        let interval = Double(min(max(randomFreq, 20), 500))
+        guard randomCarryMs >= interval else { return "" }
+        randomCarryMs = 0
+
+        let range = AXIS_VALUE_MAX
+        let center = range / 2
+        let factor: Float = {
+            switch strokeMode {
+            case 0: return 0.35   // Short
+            case 3: return 0.9    // Orbit
+            default: return 1.0   // Long / Jerk / Hops
+            }
+        }()
+        let amp = Int((randomChange.coerceIn(0, 100) / 100) * Float(range) * factor)
+        let weight: [String: Float] = ["L0": 1.0, "L1": 0.85, "L2": 0.7, "R0": 0.5, "R1": 0.5, "R2": 0.4]
+
+        let targets: [String: Int]
+        switch strokeMode {
+        case 3: // Orbit：圆周轨迹
+            let theta = Double(randomStep) * (2 * Double.pi / 24)
+            targets = [
+                "L0": center + Int(amp * sin(theta)),
+                "L1": center + Int(amp * cos(theta)),
+                "L2": center + Int(amp * 0.4 * sin(2 * theta)),
+                "R0": center + Int(amp * 0.5 * sin(theta)),
+                "R1": center + Int(amp * 0.5 * cos(theta)),
+                "R2": center
+            ]
+        case 2, 4: // Jerk / Hops：每轴独立随机落点
+            targets = AXIS_NAMES.reduce(into: [:]) { acc, axis in
+                let r = Float.random(in: 0..<1) * 2 - 1
+                acc[axis] = center + Int(r * Float(amp) * (weight[axis] ?? 0.6))
+            }
+        default: // Short / Long：方向反转的加权往返
+            randomDir = -randomDir
+            targets = AXIS_NAMES.reduce(into: [:]) { acc, axis in
+                acc[axis] = center + randomDir * amp * Int(weight[axis] ?? 0.6)
+            }
+        }
+        randomStep += 1
+        return dispatchTargets(ctx, targets, Int64(max(randomFreq, 20)))
+    }
+
+    /// freeplay：对齐安卓 runSimulationLoop —— SimPattern 图案采样 + 图案间渐变过渡 +
+    /// 自动轮换 / 手动选择，速度单位「次/分」(60=1Hz)，强度即行程比例。
+    private func autoFreeplayBody(_ ctx: CmdContext) -> String {
+        let now = nowMs()
+        let freq = min(max(Double(simSpeed) / 60.0, 1.0 / 3.0), 3.0)
+        let intensity = Double(simIntensity.coerceIn(0.2, 1.0))
+        let sel = simSelectedIndex
+        let isRandom = sel >= SIM_PATTERN_COUNT
+        let autoSwitch = simAutoSwitch || isRandom
+        let dur = Double(min(max(simDuration, 1), 30))
+        let trans = min(max(dur * 1000 / 4, 150), 800)
+
+        let t = (now - patternStartMs) / 1000.0
+        if autoSwitch && t >= dur {
+            // 切换起点取旧图案在 t 时刻的采样（对齐安卓 fromTargets 语义），渐变才连续
+            fromTargets = SimPattern.allCases[activeIdx].sample(t, freq, intensity)
+            activeIdx = isRandom ? simRandomOther(activeIdx) : (activeIdx + 1) % SIM_PATTERN_COUNT
+            patternStartMs = now
+            transStartMs = now
+        } else if !isRandom && sel != activeIdx {
+            fromTargets = SimPattern.allCases[activeIdx].sample(t, freq, intensity)
+            activeIdx = sel
+            patternStartMs = now
+            transStartMs = now
+        }
+
+        let tt = (now - patternStartMs) / 1000.0
+        let desired = SimPattern.allCases[activeIdx].sample(tt, freq, intensity)
+        let k = Float((now - transStartMs) / trans)
+        let out: [String: Int]
+        if k >= 1 {
+            out = desired
+        } else {
+            var m: [String: Int] = [:]
+            for (ax, v) in desired {
+                let from = fromTargets[ax] ?? AXIS_VALUE_MAX / 2
+                m[ax] = Int(Float(from) + Float(v - from) * k)
+            }
+            out = m
+        }
+        return dispatchTargets(ctx, out, 60)
+    }
+
+    private func simRandomOther(_ current: Int) -> Int {
+        var n = Int.random(in: 0..<SIM_PATTERN_COUNT)
+        if n == current && SIM_PATTERN_COUNT > 1 { n = (n + 1) % SIM_PATTERN_COUNT }
+        return n
     }
 
     // MARK: - 生命周期
@@ -377,7 +569,7 @@ final class ScriptPlayer {
                        object: nil, queue: .main) { [weak self] _ in
             guard let self = self else { return }
             let held = self.currentPlaybackMs()
-            self.stopMotion()
+            self.stopMotion(home: false)
             self.applyClock(playing: false, mediaMs: held)
             Diagnostics.shared.log("PLAYER", "进入后台：时钟冻结于 \(held)ms（iOS 无法后台驱动）")
         }
@@ -385,6 +577,100 @@ final class ScriptPlayer {
                        object: nil, queue: .main) { [weak self] _ in
             guard let self = self else { return }
             Diagnostics.shared.log("PLAYER", "回到前台：时钟锚点 \(self.currentPlaybackMs())ms")
+        }
+    }
+}
+
+// MARK: - SimPattern（完整移植安卓 OsrManager.kt 的模拟动作库，Ayva Stroker Lite 的 Free Play）
+//
+// 按 t(秒)/freq(Hz)/intensity(0.2-1.0 行程比例) 采样返回 6 轴目标位置（0..9999，中位 5000）。
+// ⚠ 波形公式、轴权重、渐变节奏必须与安卓逐字对齐 —— 两端不一致就是「iOS 不如安卓流畅」。
+
+let SIM_PATTERN_COUNT = SimPattern.allCases.count
+
+enum SimPattern: Int, CaseIterable {
+    case constant = 0   // 匀速往返
+    case swell = 1      // 渐强渐弱
+    case rotation = 2   // 旋转摇摆
+    case pulse = 3      // 脉冲
+    case shake = 4      // 抖动
+    case deep = 5       // 深度按压
+    case vibe = 6       // 稳态振动
+
+    var label: String {
+        switch self {
+        case .constant: return "匀速往返"
+        case .swell: return "渐强渐弱"
+        case .rotation: return "旋转摇摆"
+        case .pulse: return "脉冲"
+        case .shake: return "抖动"
+        case .deep: return "深度按压"
+        case .vibe: return "稳态振动"
+        }
+    }
+
+    /// 强度 → 行程比例：钳在 0.2-1.0（行程固定 0..9999，超 1.0 会削顶贴死行程端，
+    /// 观感反而「又慢又不连贯」——安卓注释原话）。
+    static func travelRatio(_ intensity: Double) -> Double {
+        min(max(intensity, 0.2), 1.0)
+    }
+
+    /// 三角波（值域 -1..1）。匀速往返必须用三角波：正弦是钟摆式（两端慢、中间快），
+    /// 与「匀速」对不上，用户按 300% 拉满也只会觉得慢（安卓注释原话）。
+    static func triangle(_ phase: Double) -> Double {
+        // 与 Kotlin rem 语义一致（truncatingRemainder 可为负），先 %1 再 +1 再 %1
+        let p = ((phase / (2 * Double.pi)).truncatingRemainder(dividingBy: 1) + 1)
+            .truncatingRemainder(dividingBy: 1)
+        return p < 0.5 ? 4.0 * p - 1.0 : 3.0 - 4.0 * p
+    }
+
+    func sample(_ t: Double, _ freq: Double, _ intensity: Double) -> [String: Int] {
+        let c = AXIS_VALUE_MAX / 2
+        let amp = Double(AXIS_VALUE_MAX / 2) * Self.travelRatio(intensity)
+        let mid = ["L1": c, "L2": c, "R0": c, "R1": c, "R2": c]
+        switch self {
+        case .constant:
+            let u = Self.triangle(2 * Double.pi * freq * t)
+            return ["L0": c + Int(amp * u)].merging(mid) { _, new in new }
+        case .swell:
+            let env = sin(2 * Double.pi * freq * 0.5 * t) * 0.5 + 0.5
+            let u = sin(2 * Double.pi * freq * t) * env
+            return ["L0": c + Int(amp * u)].merging(mid) { _, new in new }
+        case .rotation:
+            let p = 2 * Double.pi * freq * t
+            return [
+                "R0": c + Int(amp * sin(p)),
+                "R1": c + Int(amp * sin(p * 1.3 + Double.pi / 3)),
+                "R2": c + Int(amp * sin(p * 0.7 + 2 * Double.pi / 3)),
+                "L0": c + Int(amp * 0.3 * sin(p * 0.5)),
+                "L1": c, "L2": c
+            ]
+        case .pulse:
+            // 冲到底 → 退回中位 → 停一拍，一拍一个顿挫
+            let p = (freq * t).truncatingRemainder(dividingBy: 1)
+            let u: Double
+            if p < 0.25 { u = (p / 0.25) * 2.0 - 1.0 }
+            else if p < 0.5 { u = 1.0 - ((p - 0.25) / 0.25) * 2.0 }
+            else { u = 0.0 }
+            return ["L0": c + Int(amp * u)].merging(mid) { _, new in new }
+        case .shake:
+            // 主频 × 3 的小幅抖动，行程只有满幅的三成多
+            let a = amp * 0.35
+            let u = Self.triangle(2 * Double.pi * freq * 3.0 * t)
+            return ["L0": c + Int(a * u)].merging(mid) { _, new in new }
+        case .deep:
+            // 慢速大幅、到底停留、慢速抽回
+            let p = (freq * 0.5 * t).truncatingRemainder(dividingBy: 1)
+            let u: Double
+            if p < 0.35 { u = (p / 0.35) * 2.0 - 1.0 }
+            else if p < 0.6 { u = 1.0 }
+            else { u = 1.0 - ((p - 0.6) / 0.4) * 2.0 }
+            return ["L0": c + Int(amp * u)].merging(mid) { _, new in new }
+        case .vibe:
+            // 中位附近持续小幅震动（维持设备唤醒）
+            let a = amp * 0.12
+            let u = Self.triangle(2 * Double.pi * freq * t)
+            return ["L0": c + Int(a * u)].merging(mid) { _, new in new }
         }
     }
 }

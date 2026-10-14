@@ -176,21 +176,40 @@ enum ApiOsr {
             return json(ScriptPlayer.shared.dashState())
         }
 
-        // 自动模式：stop / sine / random / freeplay
+        // 自动模式：stop / sine / random / freeplay（字段对齐安卓 WebServer.kt "playmode" 分支）
+        // ⚠ 前端 modePayload 发的是 speed（osrSimSpeed），不是 freq —— 旧版读 freq 恒取默认 50，
+        //   且丢 autoSwitch / selectedIndex，freeplay 退化成「固定速度、不能选图案的单轴波」。
         server.post["/api/osr/playmode"] = { req in
             guard let body = parseJSON(req) else { return apiError("invalid_json") }
             let mode = OsrLink.asStr(body["mode"], "")
+            let action = OsrLink.asStr(body["action"], "start")
             if mode == "stop" {
                 ScriptPlayer.shared.stopMotion()
                 return json(["ok": true])
             }
             guard ["sine", "random", "freeplay"].contains(mode) else { return apiError("unknown_mode") }
-            // intensity / duration 前端传 0–1 小数，freq 是次数（整数）；
+            // intensity / duration 前端传 0–1 小数；speed 是次数/分（freeplay）；
             // 用 dbl 取值再缩放，不能走 asInt（0.6 会被截成 0）。
-            ScriptPlayer.shared.setAutoMode(mode,
-                                            intensity: Float(dbl(body["intensity"], 0.6)),
-                                            speed: Float(dbl(body["freq"], 50)),
-                                            duration: Float(dbl(body["duration"], 0.3)))
+            let intensity = Float(dbl(body["intensity"], 0.7))
+            let speed = Float(dbl(body["speed"], 50))
+            let duration = Float(dbl(body["duration"], 0.3))
+            let auto = OsrLink.asBool(body["autoSwitch"], true)
+            let sel = OsrLink.asInt(body["selectedIndex"], 0)
+            // random 专用字段（strokeMode: 0 Short / 1 Long / 2 Jerk / 3 Orbit / 4 Hops）
+            let stroke = OsrLink.asInt(body["strokeMode"], 1)
+            let change = Float(dbl(body["change"], 30))
+            let freq = Int(dbl(body["freq"], 50))
+            if action == "update" {
+                ScriptPlayer.shared.updateAutoMode(mode, intensity: intensity, speed: speed,
+                                                   duration: duration, autoSwitch: auto,
+                                                   selectedIndex: sel, strokeMode: stroke,
+                                                   change: change, freq: freq)
+            } else {
+                ScriptPlayer.shared.setAutoMode(mode, intensity: intensity, speed: speed,
+                                                duration: duration, autoSwitch: auto,
+                                                selectedIndex: sel, strokeMode: stroke,
+                                                change: change, freq: freq)
+            }
             return json(["ok": true])
         }
 
