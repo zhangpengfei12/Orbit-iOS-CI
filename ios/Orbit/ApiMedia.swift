@@ -33,7 +33,7 @@ enum ApiMedia {
                     "path": rel,
                     "items": [] as [Any],
                     "error": "目录不存在或还没导入视频",
-                    "debug": "去「本机媒体」里点「选择视频」把视频导入 App（iOS 不能像安卓那样直接浏览系统文件夹）"
+                    "debug": "去「本机媒体」里点「选择视频」，从相册或「文件」选取视频，导入 App 媒体库后即可播放"
                 ] as [String: Any]))
             }
             return browse(rel)

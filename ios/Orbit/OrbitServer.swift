@@ -92,7 +92,7 @@ final class OrbitServer {
     /// 供诊断页展示
     func diagnosticsInfo() -> String {
         var out: [String] = []
-        out.append("端口: \(OrbitServer.port)（必须与安卓一致，前端 88 处 fetch 是同源相对路径）")
+        out.append("端口: \(OrbitServer.port)（前端 fetch 走同源相对路径，请勿改动）")
         out.append("运行状态: \(server.operating ? "已启动" : "未启动")（底层状态 \(server.state)）")
         if let p = listenPort { out.append("地址: http://127.0.0.1:\(p)") }
         if let root = webRootPath { out.append("根目录: \(root)") }

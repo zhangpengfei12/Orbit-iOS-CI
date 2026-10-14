@@ -71,7 +71,7 @@ final class DiagnosticsViewController: UIViewController {
         #endif
 
         out.append("")
-        out.append("--- web 资源（安卓与 iOS 共用同一份）---")
+        out.append("--- web 资源（App 内置）---")
         if let root = Bundle.main.resourceURL?.appendingPathComponent("web") {
             out.append("路径: \(root.path)")
             let fm = FileManager.default
