@@ -1,0 +1,29 @@
+feat(iOS): SMB 同目录脚本 / 最近播放列表 / 打开即播 / 快进按钮去毛玻璃
+
+1) SMB 视频加载同目录脚本（根因：脚本查找只查沙盒）
+   - ApiOsr.scriptsBesideVideo 原先只按 Documents 相对路径查本地，而 SMB 视频的
+     key 是「共享内相对路径」→ 沙盒里根本没有，永远找不到同名 .funscript。
+   - 现在：视频文件确实在 Documents 下才走本地（判据是文件存在，不是目录存在，
+     避免与本地同名目录误判）；否则回落到 SMB 共享的同目录同名脚本。
+   - SmbClient 新增：listAll（列全部文件，不过滤视频扩展名）、readText（读文本，
+     上限 4 MiB）、credsFromSettings（与 ApiVideo.serveSmb 同一套取值口径）。
+   - 仍只认「同目录 + 同名」，最多取 8 个，读不到就返回空由前端胶囊显示。
+
+2) 播放器卡下方新增「最近播放」横滑条
+   - index.html 在播放器卡下方加容器；样式在 lib.css；逻辑在 app.js。
+   - 播过的片（含 SMB）按 key 记在 localStorage，下次打开直接点卡片起播；
+     支持单条删除与「清空」，上限 24 条。
+
+3) SMB 视频打开即自动播放
+   - 根因：WKWebView 默认要求用户手势才允许起播且不允许内联播放，
+     前端 <video autoplay> / play() 被系统驳回 → 停在第一帧等用户再点一次。
+   - RootViewController：allowsInlineMediaPlayback = true、
+     mediaTypesRequiringUserActionForPlayback = []。
+   - player.js：内嵌模式也置 autoplay=true；canplay 最多补播 3 次（SMB 取流慢）；
+     加 autoplayArmed 闸门，用户手动暂停/播起来/15s 后不再自动补播。
+
+4) 快进/快退按钮去掉透镜感特效并下移
+   - .btn 去掉 backdrop-filter（毛玻璃底）与 filter（霓虹光晕），不再糊住画面。
+   - 控制栏底部留白 12px→6px（内嵌 8px→3px），按钮行整体下移一点。
+
+另：三页静态资源缓存戳 20261010a → 20261015a，保证新样式/脚本生效。

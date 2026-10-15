@@ -6,14 +6,14 @@
      顶栏返回键就避不开状态栏 / 刘海 / 挖孔（首页 home.html 早已是这套写法）。 -->
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1.0,minimum-scale=1.0,user-scalable=no,viewport-fit=cover">
 <title>Orbit</title>
-<link rel="stylesheet" href="/css/common.css?v=20261010a">
-<link rel="stylesheet" href="/css/app.css?v=20261010a">
-<link rel="stylesheet" href="/css/nav.css?v=20261010a">
-<link rel="stylesheet" href="/css/osr.css?v=20261010a">
-<link rel="stylesheet" href="/css/lib.css?v=20261010a">
-<link rel="stylesheet" href="/css/cyber-base.css?v=20261010a">
-<link rel="stylesheet" href="/css/touchpad.css?v=20261010a">
-<link rel="stylesheet" href="/css/buttons.css?v=20261010a">
+<link rel="stylesheet" href="/css/common.css?v=20261015a">
+<link rel="stylesheet" href="/css/app.css?v=20261015a">
+<link rel="stylesheet" href="/css/nav.css?v=20261015a">
+<link rel="stylesheet" href="/css/osr.css?v=20261015a">
+<link rel="stylesheet" href="/css/lib.css?v=20261015a">
+<link rel="stylesheet" href="/css/cyber-base.css?v=20261015a">
+<link rel="stylesheet" href="/css/touchpad.css?v=20261015a">
+<link rel="stylesheet" href="/css/buttons.css?v=20261015a">
 </head>
 <body>
 <div class="app">
@@ -76,6 +76,17 @@
             </div>
             <!-- 状态条：默认隐藏（不再显示「未选择视频」占位），选中影片后显示片名 -->
             <div class="lib-now" id="libNow" style="display:none"></div>
+
+            <!-- 最近播放：播放器卡正下方的横滑卡片条。
+                 播过的片（含 SMB 共享里的）记在本地，下次打开直接点卡片就能播，
+                 不必再重新浏览目录 / 连共享。 -->
+            <div class="lib-recent" id="libRecent" style="display:none">
+                <div class="lib-recent-head">
+                    <span class="lib-recent-title">最近播放</span>
+                    <button class="lib-recent-clear" id="libRecentClear" type="button">清空</button>
+                </div>
+                <div class="lib-recent-strip" id="libRecentStrip"></div>
+            </div>
 
             <!-- 四个主功能按钮：一行四等分（.lib-actions 已是 repeat(4,...)，见 lib.css / cyber-base.css）。
                  文案精简 + 字号 clamp，保证窄屏也不会把按钮挤到第二行（曾因 3 列布局导致 SMB 按钮换行被遮挡、点不到）。 -->
@@ -1707,13 +1718,13 @@
         </div>
     </div>
 
-<script src="/js/custom-select.js?v=20261010a"></script>
-<script src="/js/license.js?v=20261010a"></script>
+<script src="/js/custom-select.js?v=20261015a"></script>
+<script src="/js/license.js?v=20261015a"></script>
 <!-- 试用 / 卡密激活：必须早于业务脚本，守卫才能在功能点击之前生效 -->
-<script src="/js/changelog.js?v=20261010a"></script>
-<script src="/js/app.js?v=20261010a"></script>
-<script src="/js/osr.js?v=20261010a"></script>
-<script src="/js/touchpad.js?v=20261010a"></script>
-<script src="/js/manual_record.js?v=20261010a"></script>
+<script src="/js/changelog.js?v=20261015a"></script>
+<script src="/js/app.js?v=20261015a"></script>
+<script src="/js/osr.js?v=20261015a"></script>
+<script src="/js/touchpad.js?v=20261015a"></script>
+<script src="/js/manual_record.js?v=20261015a"></script>
 </body>
 </html>

@@ -35,6 +35,15 @@ final class RootViewController: UIViewController {
         content.addUserScript(bridgeHook)
         let config = WKWebViewConfiguration()
         config.userContentController = content
+        // ⚠ 必须显式放开这两项，否则 SMB 视频打开后停在第一帧，要再点一次播放才动：
+        //   ① allowsInlineMediaPlayback —— iPhone 上默认 false，视频会被系统强制接管成全屏播放；
+        //   ② mediaTypesRequiringUserActionForPlayback —— 默认要求「用户手势」才允许起播，
+        //      前端 <video autoplay> / play() 因此被系统直接驳回（play() 的 promise reject）。
+        //      清空后网页侧自动播放才真正生效，SMB 打开即播。
+        config.allowsInlineMediaPlayback = true
+        if #available(iOS 10.0, *) {
+            config.mediaTypesRequiringUserActionForPlayback = []
+        }
         let view = WKWebView(frame: .zero, configuration: config)
         view.navigationDelegate = self
         view.scrollView.bounces = false

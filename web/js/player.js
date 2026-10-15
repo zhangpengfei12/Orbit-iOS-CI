@@ -412,12 +412,15 @@
                 typeof window.OrbitPlayer.loadUri === 'function') {
                 window.OrbitPlayer.loadUri(MANUALREC_URI, !IS_EMBED);
             } else {
-                window.OrbitPlayer.load(videoName, !IS_EMBED);
+                // 第二个参数是 autoplay：内嵌模式也要为 true，打开即播
+                window.OrbitPlayer.load(videoName, true);
             }
         } catch (e) { }
     } else {
         V.src = '/video/' + videoName.split('/').map(encodeURIComponent).join('/');
-        V.autoplay = !IS_EMBED;
+        // ⚠ 内嵌模式同样要自动播放：以前只有独立播放页才置 autoplay，
+        //    视频库里点开的片（尤其 SMB 共享）会停在第一帧，要再点一次播放按钮才动。
+        V.autoplay = true;
         // 加载后立刻探测编码，不等到 error（部分 WebView 对 HEVC 不会触发 error，只会永远黑屏）
         checkVideoCodec();
     }
@@ -1036,7 +1039,7 @@ function isBg() { return nativeBg || document.hidden; }
     window.addEventListener('orientationchange', applyCompact);
 
     // Play/pause
-    playBtn.onclick = function() { V.paused ? V.play() : V.pause(); };
+    playBtn.onclick = function() { autoplayArmed = false; V.paused ? V.play() : V.pause(); };
     V.addEventListener('play', function() {
         setPlaying(true);
         if (!syncInterval) syncInterval = setInterval(sendProgress, 250);
@@ -1197,10 +1200,18 @@ function isBg() { return nativeBg || document.hidden; }
             }
         }, 800);
     });
+    // SMB 取流比本地慢：loadedmetadata 那次 play() 可能还没就绪就被驳回，
+    // 因此 canplay 不再只触发一次 —— 最多再补两次，直到真的播起来（SMB 打开即播）。
+    // ⚠ autoplayArmed：只在「刚打开这部片」这段时间里补播。影片跑起来后（playing）、
+    //    用户自己点过播放/暂停、或 15 秒之后一律解除，避免用户手动暂停又被自动恢复。
+    var autoplayTries = 0;
+    var autoplayArmed = true;
+    V.addEventListener('playing', function() { autoplayArmed = false; });
+    setTimeout(function() { autoplayArmed = false; }, 15000);
     V.addEventListener('canplay', function() {
-        if (V.paused) tryAutoplay();
+        if (autoplayArmed && V.paused && autoplayTries < 3) { autoplayTries++; tryAutoplay(); }
         notifyVideoRatio();          // 再上报一次：loadedmetadata 时 videoWidth 可能还是 0
-    }, { once: true });
+    });
     // 视口变化（转屏等）也重新上报，父级操作卡才会重算宽高比
     window.addEventListener('resize', notifyVideoRatio);
     // 视频区域点击（两段式）：
@@ -1210,6 +1221,7 @@ function isBg() { return nativeBg || document.hidden; }
     videoEl.addEventListener('pointerdown', function() { videoTapRevealsOnly = !uiVisible; });
     videoEl.addEventListener('click', function() {
         if (videoTapRevealsOnly) { videoTapRevealsOnly = false; showUI(); return; }
+        autoplayArmed = false;      // 用户自己点了播放/暂停：不再自动补播
         V.paused ? V.play() : V.pause();
     });
 

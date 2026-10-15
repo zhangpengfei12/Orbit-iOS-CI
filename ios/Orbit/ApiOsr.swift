@@ -401,9 +401,17 @@ enum ApiOsr {
     /// 找视频同目录里与视频同名的脚本组：<base>.funscript 与 <base>.<轴>.funscript。
     /// 只认「同目录 + 同名」，不做跨目录兜底（否则会串到别的视频的脚本上）。
     private static func scriptsBesideVideo(_ key: String) -> [(String, String)] {
-        guard let url = mediaURL(key) else { return [] }
-        let dir = url.deletingLastPathComponent()
-        let base = videoBase(of: key)
+        // ① 沙盒内（本地导入的片）：视频文件确实在 Documents 下才只走本地，绝不多跑一次网络。
+        //    ⚠ 判据必须是「文件存在」而不是「目录存在」——SMB 的 key 是共享内相对路径，
+        //    万一与本地某个目录同名（如 Media/..），按目录判会误走本地而永远找不到脚本。
+        if let url = mediaURL(key), FileManager.default.fileExists(atPath: url.path) {
+            return localScripts(in: url.deletingLastPathComponent(), base: videoBase(of: key))
+        }
+        // ② 沙盒里没这个目录 —— 说明是 SMB 共享里的片，去共享上找同目录同名脚本。
+        return smbScriptsBesideVideo(key)
+    }
+
+    private static func localScripts(in dir: URL, base: String) -> [(String, String)] {
         guard !base.isEmpty,
               let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return [] }
         var out: [(String, String)] = []
@@ -415,6 +423,45 @@ enum ApiOsr {
             }
         }
         return out
+    }
+
+    /// SMB 视频的同名脚本：进共享里视频所在目录，按同一套「同名」规则取 .funscript。
+    /// 凭据取已保存的 SMB 设置；共享根目录用 "/"。读不到（没连共享 / 没权限 / 超时）
+    /// 一律返回空，由前端胶囊显示「未加载脚本」，不在这里弹错。
+    private static func smbScriptsBesideVideo(_ key: String) -> [(String, String)] {
+        guard let creds = SmbClient.credsFromSettings(), let rel = smbRelPath(of: key) else { return [] }
+        let base = videoBase(of: rel)
+        guard !base.isEmpty else { return [] }
+        var dir = (rel as NSString).deletingLastPathComponent
+        if dir.isEmpty { dir = "/" }
+        guard case .success(let entries) = SmbClient.listAll(creds, path: dir) else { return [] }
+        var out: [(String, String)] = []
+        for e in entries where !e.isDir && e.name.hasSuffix(".funscript") {
+            let body = (e.name as NSString).deletingPathExtension
+            guard body == base || body.hasPrefix(base + ".") else { continue }
+            // 目录里脚本可能成百上千，只取与视频同名那一组（够用，也不拖慢列目录）
+            let p = (dir == "/") ? e.name : dir + "/" + e.name
+            guard case .success(let text) = SmbClient.readText(creds, path: p) else { continue }
+            out.append((e.name, text))
+            if out.count >= 8 { break }
+        }
+        return out
+    }
+
+    /// 把视频 key 归一成「共享内的相对路径」。
+    /// 正常情况 key 本来就是相对路径（SMB 浏览项给的就是它）；万一前端塞了完整的
+    /// smb://host/share/... 也在这里剥掉，避免拼出无效路径导致取不到脚本。
+    private static func smbRelPath(of key: String) -> String? {
+        var s = key
+        if s.lowercased().hasPrefix("smb://") {
+            let rest = String(s.dropFirst(6))
+            var comps = rest.split(separator: "/").map(String.init)
+            if !comps.isEmpty { comps.removeFirst() }      // host
+            if !comps.isEmpty { comps.removeFirst() }      // share
+            s = comps.joined(separator: "/")
+        }
+        s = s.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return s.isEmpty ? nil : s
     }
 
     /// 读某个目录下所有 .funscript（脚本播放页「整个文件夹」模式）。

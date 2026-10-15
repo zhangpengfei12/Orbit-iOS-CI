@@ -121,6 +121,13 @@ body.embed .osr-debug-test{padding:5px 8px;font-size:11px}
 .btn{background:none;border:none;color:#fff;cursor:pointer;padding:4px;font-size:24px;opacity:.9;transition:opacity .15s;display:flex;align-items:center;justify-content:center;width:42px;height:42px}
 .btn:hover{opacity:1}
 .btn svg{width:26px;height:26px;fill:currentColor}
+/* 控制按钮去掉「毛玻璃 / 光晕」这类透镜感特效：它们会在画面上糊出一片，挡住视频内容
+   （用户明确要求快进 15s 按钮不要这层效果）。
+   backdrop-filter → 去掉模糊玻璃底；filter → 去掉赛博霓虹光晕（cyber-base 给 .btn 加的）。 */
+.btn{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
+     background:transparent!important;filter:none!important}
+/* 按钮行整体下移一点：控制栏底部留白 12px → 6px，按钮更靠画面下沿 */
+.controls{padding-bottom:6px}
 .spacer{flex:1}
 .vol-wrap{display:flex;align-items:center;gap:6px}
 .more-btn{display:none}          /* 默认不占位；JS 实测按钮行放不下时加 body.pl-compact 才显示 */
@@ -165,7 +172,7 @@ body.embed .topbar .title{display:none}
 body.embed .topbar-actions{position:absolute;top:4px;left:8px;right:auto;margin:0;transform:none}
 body.embed .sync{top:8px;right:8px;font-size:12px;padding:3px 8px;gap:5px}
 body.embed .axis-chip{min-width:18px;height:16px;font-size:10px}
-body.embed .controls{padding:10px 10px 8px;background:linear-gradient(to top,rgba(0,0,0,.78),transparent)}
+body.embed .controls{padding:10px 10px 3px;background:linear-gradient(to top,rgba(0,0,0,.78),transparent)}
 body.embed .progress-wrap{height:16px;margin-bottom:4px}
 body.embed .btn-row{gap:8px}
 body.embed .btn{width:36px;height:36px}

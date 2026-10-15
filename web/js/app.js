@@ -5089,6 +5089,7 @@ function initLibraryPage() {
     b = $('libBtnAxis'); if (b) b.addEventListener('click', libOpenAxis);
     b = $('libBtnClear'); if (b) b.addEventListener('click', libClearAll);
     initSmbQuick();
+    libRecentInit();
     // 设置页「OSR 轴设置」面板里的入口按钮：与上面「轴设置」共用同一个弹窗
     b = $('btnOpenAxisModal');
     if (b && b.dataset.bound !== '1') { b.dataset.bound = '1'; b.addEventListener('click', libOpenAxis); }
@@ -5380,6 +5381,77 @@ function libPlayByKey(key, title) {
     libPlay({ id: String(key), name: String(title || '') });
 }
 
+/* ─── 最近播放（播放器卡正下方横滑条） ──────────────────────────
+   播过的片（含 SMB 共享里的）按 key 记在本地，下次打开直接点卡片起播，
+   不必再重新浏览目录 / 连共享。只记 key + 片名，不复制任何文件。 */
+var LIB_RECENT_KEY = 'orbit_lib_recent_v1';
+var LIB_RECENT_MAX = 24;
+var libRecent = [];
+
+function libRecentLoad() {
+    libRecent = [];
+    try {
+        var arr = JSON.parse(localStorage.getItem(LIB_RECENT_KEY) || '[]');
+        if (Array.isArray(arr)) {
+            libRecent = arr.filter(function (it) { return it && it.key; }).slice(0, LIB_RECENT_MAX);
+        }
+    } catch (e) { libRecent = []; }
+}
+function libRecentSave() {
+    try { localStorage.setItem(LIB_RECENT_KEY, JSON.stringify(libRecent)); } catch (e) { }
+}
+function libRecentAdd(key, title) {
+    if (!key) return;
+    var k = String(key), t = String(title || '');
+    for (var i = 0; i < libRecent.length; i++) {
+        if (libRecent[i].key === k) { libRecent.splice(i, 1); break; }
+    }
+    libRecent.unshift({ key: k, title: t, at: Date.now() });
+    if (libRecent.length > LIB_RECENT_MAX) libRecent.length = LIB_RECENT_MAX;
+    libRecentSave();
+    libRenderRecent();
+}
+function libRenderRecent() {
+    var box = $('libRecent'), strip = $('libRecentStrip');
+    if (!box || !strip) return;
+    strip.innerHTML = '';
+    if (!libRecent.length) { box.style.display = 'none'; return; }
+    box.style.display = '';
+    libRecent.forEach(function (it) {
+        var card = document.createElement('div');
+        card.className = 'lib-recent-card';
+        var name = document.createElement('span');
+        name.className = 'lib-recent-name';
+        name.textContent = it.title || it.key;
+        card.appendChild(name);
+        var del = document.createElement('button');
+        del.className = 'lib-recent-del';
+        del.type = 'button';
+        del.textContent = '✕';
+        del.title = '从最近播放移除';
+        del.addEventListener('click', function (e) {
+            e.stopPropagation();
+            libRecent = libRecent.filter(function (x) { return x.key !== it.key; });
+            libRecentSave();
+            libRenderRecent();
+        });
+        card.appendChild(del);
+        card.addEventListener('click', function () { libPlayByKey(it.key, it.title); });
+        strip.appendChild(card);
+    });
+}
+function libRecentInit() {
+    libRecentLoad();
+    libRenderRecent();
+    var btn = $('libRecentClear');
+    if (btn && btn.dataset.bound !== '1') {
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', function () {
+            libRecent = []; libRecentSave(); libRenderRecent();
+        });
+    }
+}
+
 function libPlay(item) {
     /* 试用拦截：内嵌播放器是独立 document，点击不冒泡到父页，
      * 文档级守卫管不到它，只能在这里做函数级拦截。 */
@@ -5393,6 +5465,7 @@ function libPlay(item) {
     if (!frame) return;
     var key = libPlayKey(item);
     var title = String(item.name || '');
+    libRecentAdd(key, title);          // 记进「最近播放」，下次点卡片直接起播
     var src = '/player/?video=' + encodeURIComponent(key) +
         '&title=' + encodeURIComponent(title) + '&embed=1' +
         (isVrBoxMode() ? '&vrbox=1' : '') + libScriptFolderQuery() +

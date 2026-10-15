@@ -188,6 +188,72 @@ enum SmbClient {
         }
     }
 
+    /// 列出目录下的**全部**条目（不过滤文件类型）。
+    /// 脚本查找要的是 .funscript，而 listDirectory(files:) 只放行视频扩展名，故单开一个。
+    static func listAll(_ c: SmbCreds, path: String) -> Result<[SmbEntry], SmbFailure> {
+        do {
+            let m = try manager(for: c)
+            let raw: [[URLResourceKey: Any]] = try sync {
+                try await m.contentsOfDirectory(atPath: normalize(path))
+            }
+            var out: [SmbEntry] = []
+            for item in raw {
+                guard let name = item[.nameKey] as? String else { continue }
+                if name == "." || name == ".." { continue }
+                let full = item[.pathKey] as? String ?? join(path, name)
+                let isDir = (item[.fileResourceTypeKey] as? URLFileResourceType) == .directory
+                let size = (item[.fileSizeKey] as? NSNumber)?.int64Value ?? 0
+                out.append(SmbEntry(name: name, path: relative(full), isDir: isDir, size: size))
+            }
+            return .success(out)
+        } catch {
+            return .failure(describe(error, creds: c, op: "列目录", path: path))
+        }
+    }
+
+    /// 读整个文本文件（取 .funscript 用）。超过 maxBytes 直接放弃，免得把大文件读进内存。
+    static func readText(_ c: SmbCreds, path: String, maxBytes: Int64 = 4 * 1024 * 1024) -> Result<String, SmbFailure> {
+        switch sizeOf(c, path: path) {
+        case .success(let total):
+            guard total > 0 else {
+                return .failure(SmbFailure(message: "文件为空", debug: ["path": path, "size": total]))
+            }
+            guard total <= maxBytes else {
+                return .failure(SmbFailure(message: "文件过大", debug: ["path": path, "size": total]))
+            }
+            switch read(c, path: path, start: 0, count: total) {
+            case .success(let data):
+                guard let s = String(data: data, encoding: .utf8) else {
+                    return .failure(SmbFailure(message: "脚本不是 UTF-8 文本", debug: ["path": path]))
+                }
+                return .success(s)
+            case .failure(let f):
+                return .failure(f)
+            }
+        case .failure(let f):
+            return .failure(f)
+        }
+    }
+
+    /// 从已保存的设置里取 SMB 凭据（没配主机返回 nil）。
+    /// 取值口径与 ApiVideo.serveSmb 完全一致，避免两处读法分叉。
+    static func credsFromSettings() -> SmbCreds? {
+        let saved = OrbitConfig.shared.dictionary(forKeyPath: "settings.smb")
+        let host = (saved["host"] as? String) ?? ""
+        guard !host.isEmpty else { return nil }
+        let share = (saved["share"] as? String) ?? ""
+        let anonymous = (saved["anonymous"] as? Bool)
+            ?? ((saved["anonymous"] as? NSNumber)?.boolValue ?? false)
+        return SmbCreds(
+            host: host,
+            share: share,
+            user: anonymous ? "guest" : ((saved["username"] as? String) ?? ""),
+            pass: anonymous ? "" : ((saved["password"] as? String) ?? ""),
+            domain: anonymous ? "" : ((saved["domain"] as? String) ?? ""),
+            anonymous: anonymous
+        )
+    }
+
     // MARK: - async → sync 桥
 
     /// Swifter 的路由闭包是同步的（返回 HttpResponse），而 AMSMB2 全是 async。

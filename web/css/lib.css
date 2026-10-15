@@ -609,3 +609,38 @@
 .lib-vrmode-t{font-weight:700;color:#f0dcff;letter-spacing:.02em;white-space:nowrap}
 .lib-vrmode-s{color:#b9a6d6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lib-vrmode b{color:#7dfcff;font-weight:700}
+
+/* ─── 最近播放（播放器卡正下方的横滑卡片条） ───
+   播过的片落到 localStorage，下次打开直接点卡片起播；
+   卡片横向滚动，不占竖向空间、不挤压下方「视频列表」。 */
+.lib-recent{margin:10px 0 0}
+.lib-recent-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.lib-recent-title{font-size:13px;font-weight:700;color:#cfe0f5}
+.lib-recent-clear{
+    background:none;border:none;color:#7f93ad;font-size:12px;cursor:pointer;padding:2px 4px;
+    -webkit-tap-highlight-color:transparent;
+}
+.lib-recent-clear:active{color:#4A9EFF}
+.lib-recent-strip{
+    display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;
+    padding:2px 2px 6px;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+}
+.lib-recent-strip::-webkit-scrollbar{display:none}
+.lib-recent-card{
+    flex:0 0 auto;max-width:160px;position:relative;
+    display:flex;align-items:center;
+    padding:8px 26px 8px 10px;border-radius:10px;
+    border:1px solid rgba(255,255,255,.14);
+    background:rgba(255,255,255,.07);
+    color:#e6eef8;font-size:13px;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+}
+.lib-recent-card:active{background:rgba(74,158,255,.28)}
+.lib-recent-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lib-recent-del{
+    position:absolute;right:2px;top:50%;transform:translateY(-50%);
+    width:22px;height:22px;line-height:1;padding:0;
+    border:none;background:none;color:#8fa3bb;font-size:14px;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+}
+.lib-recent-del:active{color:#ff6b6b}
