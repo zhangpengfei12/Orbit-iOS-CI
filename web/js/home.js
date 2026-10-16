@@ -114,15 +114,21 @@
     });
 
     /* ---------- iOS：隐藏不可用的首页磁贴 ----------
-       iOS 沙盒无系统文件夹 / 视频授权，「脚本编辑」页的「选择视频」已在 app.js 隐藏，
-       该页变残缺，连同首页磁贴一并隐藏。home.html 不加载 app.js，须在此单独处理。
+       iOS 沙盒无系统文件夹 / 视频授权，下列功能在 iOS 上残缺或完全不可用，连同首页磁贴一并隐藏：
+         · panel=manualrecord「手工编辑脚本」——「选择视频」已在 app.js 隐藏，页变残缺；
+         · panel=record「AI生成脚本」——iOS 无视频逐帧分析管线，生成链路不可用；
+         · panel=script「脚本播放」——其「选择脚本文件夹」按钮已在 app.js 隐藏，iOS 无对应入口。
+       home.html 不加载 app.js，须在此单独处理。
        （iPadOS 13+ 的 UA 伪装成 Macintosh，需额外用 ontouchend 判别 touch 设备） */
     (function hideIosDeadTiles() {
         var ua = navigator.userAgent || '';
         var isIOS = /iPad|iPhone|iPod/i.test(ua) ||
             (/Macintosh/i.test(ua) && 'ontouchend' in document);
         if (!isIOS) return;
-        var tiles = document.querySelectorAll('.hm-tile[href="/index.html?panel=manualrecord"]');
+        var sel = '.hm-tile[href="/index.html?panel=manualrecord"],' +
+                  '.hm-tile[href="/index.html?panel=record"],' +
+                  '.hm-tile[href="/index.html?panel=script"]';
+        var tiles = document.querySelectorAll(sel);
         Array.prototype.forEach.call(tiles, function (t) { t.style.display = 'none'; });
     })();
 })();
