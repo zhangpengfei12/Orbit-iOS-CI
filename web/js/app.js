@@ -97,6 +97,12 @@ function iosHideDeadFeatures() {
     // 6) 媒体库编辑「子目录」+ 浏览按钮：iOS 沙盒无「根路径 / 子目录」概念 → 隐藏整行。
     var libPathRow = $('libraryEditPath');
     if (libPathRow) { var pr = libPathRow.closest('.input-with-btn'); if (pr) pr.style.display = 'none'; }
+    // 7) 脚本编辑整页入口：iOS 上该页「选择视频」已隐藏（见第 5 点），页面变残缺，
+    //    连同侧边栏项 + 首页磁贴一并隐藏（iOS 编辑/导入脚本走其它通道）。
+    var mrSidebar = document.querySelector('.sidebar-item[data-panel="manualrecord"]');
+    if (mrSidebar) mrSidebar.style.display = 'none';
+    var mrTile = document.querySelector('.hm-tile[href="/index.html?panel=manualrecord"]');
+    if (mrTile) mrTile.style.display = 'none';
 }
 
 function itemPosterSrc(id) {

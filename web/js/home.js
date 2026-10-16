@@ -112,4 +112,17 @@
     window.addEventListener('pageshow', function (e) {
         if (e.persisted) startPolling();
     });
+
+    /* ---------- iOS：隐藏不可用的首页磁贴 ----------
+       iOS 沙盒无系统文件夹 / 视频授权，「脚本编辑」页的「选择视频」已在 app.js 隐藏，
+       该页变残缺，连同首页磁贴一并隐藏。home.html 不加载 app.js，须在此单独处理。
+       （iPadOS 13+ 的 UA 伪装成 Macintosh，需额外用 ontouchend 判别 touch 设备） */
+    (function hideIosDeadTiles() {
+        var ua = navigator.userAgent || '';
+        var isIOS = /iPad|iPhone|iPod/i.test(ua) ||
+            (/Macintosh/i.test(ua) && 'ontouchend' in document);
+        if (!isIOS) return;
+        var tiles = document.querySelectorAll('.hm-tile[href="/index.html?panel=manualrecord"]');
+        Array.prototype.forEach.call(tiles, function (t) { t.style.display = 'none'; });
+    })();
 })();
