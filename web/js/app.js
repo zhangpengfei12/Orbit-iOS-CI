@@ -4476,6 +4476,168 @@ function playSmbQuickVideo(item) {
     libPlay(item);
 }
 
+// ─── 播放器下方「视频列表」本地 / 网络 双 tab ───────────────
+// 本地 tab：最近播放（手机上加载过的视频）+ 本地文件夹浏览（沿用 #libList）。
+// 网络 tab：SMB 共享文件夹，已配置 settings.smb 则直接打开根目录，否则显示引导。
+var libSmbItemsCache = [];   // 网络 tab 当前目录条目（含文件夹）
+var libSmbCreds = null;      // 网络 tab 所用凭据（来自 /api/settings/smb）
+var libSmbPath = '';
+var libSmbReqId = 0;
+var libSmbConfigured = false;
+
+function libInitTabs() {
+    var lt = $('libTabLocal'), st = $('libTabSmb'), sb = $('libSmbSetupBtn');
+    if (lt && lt.dataset.bound !== '1') {
+        lt.dataset.bound = '1';
+        lt.addEventListener('click', function () { libSwitchTab('local'); });
+    }
+    if (st && st.dataset.bound !== '1') {
+        st.dataset.bound = '1';
+        st.addEventListener('click', function () { libSwitchTab('smb'); });
+    }
+    if (sb && sb.dataset.bound !== '1') {
+        sb.dataset.bound = '1';
+        sb.addEventListener('click', openSmbQuickConfig);
+    }
+}
+
+function libSwitchTab(which) {
+    var isLocal = (which === 'local');
+    var lt = $('libTabLocal'), st = $('libTabSmb');
+    var pLocal = document.querySelector('.lib-tab-pane[data-pane="local"]');
+    var pSmb = document.querySelector('.lib-tab-pane[data-pane="smb"]');
+    if (lt) lt.classList.toggle('active', isLocal);
+    if (st) st.classList.toggle('active', !isLocal);
+    if (pLocal) pLocal.style.display = isLocal ? '' : 'none';
+    if (pSmb) pSmb.style.display = isLocal ? 'none' : '';
+    if (isLocal) {
+        // 切回本地：清掉网络 tab 遗留的 SMB 播放列表，避免「顺序 / 随机」串到本地
+        libSmbQuickItems = [];
+    } else {
+        libSmbActivate();
+    }
+}
+
+// 进入网络 tab：读 settings.smb，已配置则直接开根目录，否则显示引导
+function libSmbActivate() {
+    var setup = $('libSmbSetup'), list = $('libSmbList'),
+        empty = $('libSmbEmpty'), loading = $('libSmbLoading');
+    fetch('/api/settings/smb')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            var host = (d && d.host) ? String(d.host).trim() : '';
+            if (!host) {
+                libSmbConfigured = false;
+                if (setup) setup.style.display = '';
+                if (list) list.innerHTML = '';
+                if (empty) empty.style.display = 'none';
+                if (loading) loading.style.display = 'none';
+                return;
+            }
+            libSmbConfigured = true;
+            if (setup) setup.style.display = 'none';
+            libSmbCreds = {
+                host: host,
+                share: (d.share || '').trim(),
+                user: (d.username || '').trim(),
+                pass: (d.password || ''),
+                domain: (d.domain || '').trim(),
+                anonymous: !!d.anonymous
+            };
+            libSmbBrowse('');
+        })
+        .catch(function () {
+            libSmbConfigured = false;
+            if (setup) setup.style.display = '';
+            if (list) list.innerHTML = '';
+            if (loading) loading.style.display = 'none';
+        });
+}
+
+// 浏览 SMB 某目录（path 为空 = 根 / 共享列表）
+function libSmbBrowse(path) {
+    if (!libSmbConfigured || !libSmbCreds) { libSmbActivate(); return; }
+    libSmbPath = path;
+    var list = $('libSmbList'), empty = $('libSmbEmpty'), loading = $('libSmbLoading');
+    if (loading) loading.style.display = '';
+    if (empty) empty.style.display = 'none';
+    if (list) list.innerHTML = '';
+    libSmbReqId++;
+    var rid = libSmbReqId;
+    var c = libSmbCreds;
+    var url = '/api/smb/browse?host=' + encodeURIComponent(c.host) +
+        '&share=' + encodeURIComponent(c.share) +
+        '&username=' + encodeURIComponent(c.user) +
+        '&password=' + encodeURIComponent(c.pass) +
+        '&anonymous=' + (c.anonymous ? '1' : '0') +
+        '&domain=' + encodeURIComponent(c.domain) +
+        '&files=1' +
+        '&path=' + encodeURIComponent(path);
+    fetch(url)
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (rid !== libSmbReqId) return;
+            if (loading) loading.style.display = 'none';
+            if (d.error) {
+                if (list) list.innerHTML = '';
+                if (empty) { empty.textContent = d.error + (d.debug ? (' · ' + JSON.stringify(d.debug)) : ''); empty.style.display = ''; }
+                return;
+            }
+            var items = (d.items || []);
+            libSmbItemsCache = items;
+            if (!list) return;
+            if (items.length === 0) {
+                list.innerHTML = '';
+                if (empty) { empty.textContent = d.emptyHint || '此目录下没有内容'; empty.style.display = ''; }
+                return;
+            }
+            if (empty) empty.style.display = 'none';
+            list.innerHTML = '';
+            items.forEach(function (it) {
+                var row = libBuildSmbItem(it);
+                if (row) list.appendChild(row);
+            });
+            var bc = $('libSmbCrumb');
+            if (bc) renderBreadcrumb(bc, path, function (next) { libSmbBrowse(next); }, c.share || c.host);
+        })
+        .catch(function () {
+            if (rid !== libSmbReqId) return;
+            if (loading) loading.style.display = 'none';
+            if (list) list.innerHTML = '';
+            if (empty) { empty.textContent = '连接失败，请检查地址、共享名与账号'; empty.style.display = ''; }
+        });
+}
+
+// 网络 tab 的条目行：复用 .lib-item，目录可下钻、视频点开即播
+function libBuildSmbItem(item) {
+    var row = document.createElement('div');
+    row.className = 'lib-item';
+    var name = escapeHtml(item.name);
+    if (/\.funscript$/i.test(item.name || '')) return null;
+    if (item.isDir) {
+        row.innerHTML = '<span class="lib-thumb-ico">DIR</span>' +
+            '<span class="lib-item-body"><span class="lib-item-name">' + name + '</span></span>' +
+            '<span class="lib-item-tag">文件夹</span>';
+        row.addEventListener('click', function () {
+            // 共享名留空时列出的是「共享列表」，首段路径应提升为 share（同 openSmbQuickBrowse 逻辑）
+            if (!libSmbCreds.share) { libSmbCreds.share = item.path; libSmbBrowse(''); }
+            else { libSmbBrowse(item.path); }
+        });
+    } else {
+        row.innerHTML = '<span class="lib-thumb-ico">VID</span>' +
+            '<span class="lib-item-body"><span class="lib-item-name">' + name + '</span></span>' +
+            '<span class="lib-item-tag">视频文件</span>';
+        row.addEventListener('click', function () { libSmbPlay(item); });
+    }
+    return row;
+}
+
+// 从网络 tab 起播：用当前目录视频列表作为「顺序 / 随机」播放列表
+function libSmbPlay(item) {
+    libSmbQuickItems = libSmbItemsCache.filter(function (it) { return it && !it.isDir; });
+    libPlay(item);
+}
+
 // ─── Library Edit Path Browser ─────────────────────────────
 
 var pathBrowseRequestId = 0;
@@ -5089,6 +5251,7 @@ function initLibraryPage() {
     b = $('libBtnAxis'); if (b) b.addEventListener('click', libOpenAxis);
     b = $('libBtnClear'); if (b) b.addEventListener('click', libClearAll);
     initSmbQuick();
+    libInitTabs();
     libRecentInit();
     // 设置页「OSR 轴设置」面板里的入口按钮：与上面「轴设置」共用同一个弹窗
     b = $('btnOpenAxisModal');

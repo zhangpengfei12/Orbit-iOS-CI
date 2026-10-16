@@ -644,3 +644,21 @@
     -webkit-tap-highlight-color:transparent;
 }
 .lib-recent-del:active{color:#ff6b6b}
+
+/* ─── 视频列表 本地 / 网络 双 tab ───
+   本地 = 手机上加载过的视频（最近播放 + 本地文件夹）；
+   网络 = SMB 共享文件夹内联浏览。pane 显隐由 app.js libSwitchTab 控制。 */
+.lib-tabs{display:flex;gap:8px;margin:0 0 10px}
+.lib-tab{
+    flex:1;padding:9px 0;text-align:center;cursor:pointer;
+    border:1px solid rgba(47,183,232,.25);border-radius:8px;
+    background:rgba(255,255,255,.04);color:#9fb3c8;font-size:14px;
+    -webkit-tap-highlight-color:transparent;
+}
+.lib-tab.active{
+    background:rgba(47,183,232,.18);border-color:rgba(47,183,232,.6);color:#eaf6ff;
+    box-shadow:0 0 14px -6px rgba(47,183,232,.8);
+}
+.lib-tab-pane{} /* 仅作容器，显隐由 JS 控制 */
+.lib-smb-setup{padding:20px 12px;text-align:center}
+.lib-smb-setup-p{margin:0 0 14px;font-size:13px;color:#9fb3c8;line-height:1.6}
