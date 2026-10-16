@@ -86,6 +86,17 @@ function iosHideDeadFeatures() {
     if (libFolderBtn) libFolderBtn.style.display = 'none';
     var tpFolderBtn = $('tpPickFolder');
     if (tpFolderBtn) tpFolderBtn.style.display = 'none';
+    // 4) 脚本播放页「选择脚本文件夹」：iOS 走 MediaPicker 给的是一次性临时文件，
+    //    不是可持久浏览的文件夹 root，loadScriptFolder 的「文件夹」语义在 iOS 不成立 → 隐藏。
+    var osrPick = $('osrPickScriptFolder');
+    if (osrPick) osrPick.style.display = 'none';
+    // 5) 脚本编辑页「选择视频」：iOS 上录制轨迹固定存到 Media/Patterns 而非视频同目录，
+    //    选视频后保存语义不匹配 → 隐藏（页面仍可从侧边栏进入，但无可用选择入口）。
+    var mrPick = $('mrPickVideo');
+    if (mrPick) mrPick.style.display = 'none';
+    // 6) 媒体库编辑「子目录」+ 浏览按钮：iOS 沙盒无「根路径 / 子目录」概念 → 隐藏整行。
+    var libPathRow = $('libraryEditPath');
+    if (libPathRow) { var pr = libPathRow.closest('.input-with-btn'); if (pr) pr.style.display = 'none'; }
 }
 
 function itemPosterSrc(id) {
