@@ -382,13 +382,68 @@ jobs:
           add_bool LSRequiresIPhoneOS true
           # 出口合规：只用 Apple 内置/标准算法（HTTPS、CryptoKit），声明豁免后 TestFlight 不再逐包弹「App 加密文稿」问框
           add_bool ITSAppUsesNonExemptEncryption false
+
+          # ── 相册导入 / 外部文件接收 ──────────────────────────────────
+          # ⚠ 这一段必须写在这里，不能只改 ios/Orbit/Info.plist：
+          #   上面的注释已经说明 Xcode 26 完全忽略该文件（自定义键全丢），
+          #   build 74 曾只在源 plist 里加了这些键，结果产物一个都没有（分享面板里看不到 App）。
+          # 相册：缺这个描述串，PHPicker 的导入路径会被系统静默拦掉（不报错、不回调）
+          add_str NSPhotoLibraryUsageDescription "用于从相册选择视频导入 App 媒体库播放（仅读取您主动选中的视频）"
+          # 手控触板陀螺仪：缺这个描述串时 CMDeviceMotion 静默无数据（不崩溃）
+          add_str NSMotionUsageDescription "用于「手控触板」的陀螺仪与摇一摇模式，把手机姿态转成设备动作"
+          # 播放时进后台靠 audio 模式延长存活
+          add_arr UIBackgroundModes audio
+          # 「文件」App 原地打开本 App 容器内文件
+          add_bool LSSupportsOpeningDocumentsInPlace true
+          # 分享面板注册：不注册的话「相册 → 分享 → 发送到 App」列表里根本没有 Orbit
+          if ! has CFBundleDocumentTypes; then
+            $PB -c "Add :CFBundleDocumentTypes array" "$APP/Info.plist"
+            $PB -c "Add :CFBundleDocumentTypes:0 dict" "$APP/Info.plist"
+            $PB -c "Add :CFBundleDocumentTypes:0:CFBundleTypeName string 视频" "$APP/Info.plist"
+            $PB -c "Add :CFBundleDocumentTypes:0:CFBundleTypeRole string Viewer" "$APP/Info.plist"
+            $PB -c "Add :CFBundleDocumentTypes:0:LSHandlerRank string Alternate" "$APP/Info.plist"
+            $PB -c "Add :CFBundleDocumentTypes:0:LSItemContentTypes array" "$APP/Info.plist"
+            $PB -c "Add :CFBundleDocumentTypes:0:LSItemContentTypes: string public.movie" "$APP/Info.plist"
+            $PB -c "Add :CFBundleDocumentTypes:0:LSItemContentTypes: string public.mpeg-4" "$APP/Info.plist"
+            $PB -c "Add :CFBundleDocumentTypes:0:LSItemContentTypes: string com.apple.quicktime-movie" "$APP/Info.plist"
+            $PB -c "Add :CFBundleDocumentTypes:1 dict" "$APP/Info.plist"
+            $PB -c "Add :CFBundleDocumentTypes:1:CFBundleTypeName string Funscript脚本" "$APP/Info.plist"
+            $PB -c "Add :CFBundleDocumentTypes:1:CFBundleTypeRole string Viewer" "$APP/Info.plist"
+            $PB -c "Add :CFBundleDocumentTypes:1:LSHandlerRank string Alternate" "$APP/Info.plist"
+            $PB -c "Add :CFBundleDocumentTypes:1:LSItemContentTypes array" "$APP/Info.plist"
+            $PB -c "Add :CFBundleDocumentTypes:1:LSItemContentTypes: string app.orbit.funscript" "$APP/Info.plist"
+          fi
+          # .funscript 不是系统已知类型，必须自己声明 UTI，否则分享面板同样不列本 App
+          if ! has UTImportedTypeDeclarations; then
+            $PB -c "Add :UTImportedTypeDeclarations array" "$APP/Info.plist"
+            $PB -c "Add :UTImportedTypeDeclarations:0 dict" "$APP/Info.plist"
+            $PB -c "Add :UTImportedTypeDeclarations:0:UTTypeIdentifier string app.orbit.funscript" "$APP/Info.plist"
+            $PB -c "Add :UTImportedTypeDeclarations:0:UTTypeDescription string Funscript脚本" "$APP/Info.plist"
+            $PB -c "Add :UTImportedTypeDeclarations:0:UTTypeConformsTo array" "$APP/Info.plist"
+            $PB -c "Add :UTImportedTypeDeclarations:0:UTTypeConformsTo: string public.json" "$APP/Info.plist"
+            $PB -c "Add :UTImportedTypeDeclarations:0:UTTypeConformsTo: string public.text" "$APP/Info.plist"
+            $PB -c "Add :UTImportedTypeDeclarations:0:UTTypeTagSpecification dict" "$APP/Info.plist"
+            $PB -c "Add :UTImportedTypeDeclarations:0:UTTypeTagSpecification:public.filename-extension array" "$APP/Info.plist"
+            $PB -c "Add :UTImportedTypeDeclarations:0:UTTypeTagSpecification:public.filename-extension: string funscript" "$APP/Info.plist"
+          fi
+
           # build 号：用 GitHub 自带的 GITHUB_RUN_NUMBER（仓库内每次流水线运行单调递增的整数），
           # 天然满足 TestFlight「build 号必须高于上次」的要求，且不依赖 git 命令（runner 上 git 目录
           # 安全策略会静默吞掉 rev-list 输出）。GENERATE=YES 下 CURRENT_PROJECT_VERSION 命令行覆盖不生效，故直接写进 plist。
           BN="${GITHUB_RUN_NUMBER:-1}"
           $PB -c "Set :CFBundleVersion $BN" "$APP/Info.plist" 2>/dev/null || $PB -c "Add :CFBundleVersion string $BN" "$APP/Info.plist"
           echo "=== 注入后产物 Info.plist 关键键 ==="
-          plutil -p "$APP/Info.plist" 2>/dev/null | grep -E "UISupportedInterfaceOrientations|UILaunchScreen|NSBluetoothAlwaysUsageDescription|CFBundleDisplayName|UIUserInterfaceStyle|NSAppTransportSecurity|CFBundleVersion"
+          plutil -p "$APP/Info.plist" 2>/dev/null | grep -E "UISupportedInterfaceOrientations|UILaunchScreen|NSBluetoothAlwaysUsageDescription|CFBundleDisplayName|UIUserInterfaceStyle|NSAppTransportSecurity|CFBundleVersion|NSPhotoLibraryUsageDescription|CFBundleDocumentTypes|UTImportedTypeDeclarations|NSMotionUsageDescription|UIBackgroundModes|LSSupportsOpeningDocumentsInPlace"
+
+          # 硬校验：关键键必须真的进包。build 74 就是「只在源 plist 里加了键、产物里没有」，
+          # 而流程一路绿到底，直到用户反馈「分享面板里找不到 App」才暴露。缺任何一个直接失败。
+          MISSING=0
+          for k in NSPhotoLibraryUsageDescription CFBundleDocumentTypes UTImportedTypeDeclarations \
+                   NSMotionUsageDescription UIBackgroundModes LSSupportsOpeningDocumentsInPlace; do
+            if ! has "$k"; then echo "❌ 关键键缺失：$k"; MISSING=1; fi
+          done
+          if [ "$MISSING" = "1" ]; then echo "产物 Info.plist 关键键不全，终止构建。"; exit 1; fi
+          echo "关键键校验通过 ✓"
 
       - name: 诊断构建产物（app bundle 里真正的 Info.plist / 图标）
         if: steps.sig.outputs.ready == 'true'

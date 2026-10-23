@@ -4516,6 +4516,26 @@ function libInitTabs() {
         sb.dataset.bound = '1';
         sb.addEventListener('click', openSmbQuickConfig);
     }
+    // 「＋ 选视频」：直接调原生选择器（iOS 走相册/文件，安卓走 SAF）。
+    // 导入成功后原生会回 __onFolderPicked(Media) → saveLocalRoot + libLoadFolder，列表自动刷新。
+    // 浏览器里没有原生桥，按钮点了没意义，直接藏掉。
+    var av = $('libAddVideo');
+    if (av) {
+        if (window.Orbit && typeof window.Orbit.pickFolder === 'function') {
+            if (av.dataset.bound !== '1') {
+                av.dataset.bound = '1';
+                av.addEventListener('click', function () {
+                    // 防连点：选择器弹出有延迟，连点会叠两个
+                    if (av.disabled) return;
+                    av.disabled = true;
+                    setTimeout(function () { av.disabled = false; }, 1500);
+                    window.Orbit.pickFolder();
+                });
+            }
+        } else {
+            av.style.display = 'none';
+        }
+    }
 }
 
 function libSwitchTab(which) {

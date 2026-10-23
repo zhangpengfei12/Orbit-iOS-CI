@@ -6,14 +6,14 @@
      顶栏返回键就避不开状态栏 / 刘海 / 挖孔（首页 home.html 早已是这套写法）。 -->
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1.0,minimum-scale=1.0,user-scalable=no,viewport-fit=cover">
 <title>Orbit</title>
-<link rel="stylesheet" href="/css/common.css?v=20261018a">
-<link rel="stylesheet" href="/css/app.css?v=20261018a">
-<link rel="stylesheet" href="/css/nav.css?v=20261018a">
-<link rel="stylesheet" href="/css/osr.css?v=20261018a">
-<link rel="stylesheet" href="/css/lib.css?v=20261018a">
-<link rel="stylesheet" href="/css/cyber-base.css?v=20261018a">
-<link rel="stylesheet" href="/css/touchpad.css?v=20261018a">
-<link rel="stylesheet" href="/css/buttons.css?v=20261018a">
+<link rel="stylesheet" href="/css/common.css?v=20261024a">
+<link rel="stylesheet" href="/css/app.css?v=20261024a">
+<link rel="stylesheet" href="/css/nav.css?v=20261024a">
+<link rel="stylesheet" href="/css/osr.css?v=20261024a">
+<link rel="stylesheet" href="/css/lib.css?v=20261024a">
+<link rel="stylesheet" href="/css/cyber-base.css?v=20261024a">
+<link rel="stylesheet" href="/css/touchpad.css?v=20261024a">
+<link rel="stylesheet" href="/css/buttons.css?v=20261024a">
 </head>
 <body>
 <div class="app">
@@ -104,6 +104,10 @@
                 <div class="lib-tabs">
                     <button class="lib-tab active" type="button" data-lt="local" id="libTabLocal">本地</button>
                     <button class="lib-tab" type="button" data-lt="smb" id="libTabSmb">网络</button>
+                    <!-- 选视频快捷入口：iOS 没有系统文件夹授权，导入只能走系统选择器；
+                         设置页入口比较深（且部分版本没放出设置），这里给一个随手可点的位置。
+                         点击调 window.Orbit.pickFolder()，导入完成后 __onFolderPicked 会自动刷新本地列表。 -->
+                    <button class="lib-tab-add" type="button" id="libAddVideo" title="从相册或文件添加视频">＋ 选视频</button>
                 </div>
 
                 <!-- 本地 tab：最近播放（手机上加载过的视频）+ 本地文件夹浏览 -->
@@ -1741,13 +1745,13 @@
         </div>
     </div>
 
-<script src="/js/custom-select.js?v=20261018a"></script>
-<script src="/js/license.js?v=20261018a"></script>
+<script src="/js/custom-select.js?v=20261024a"></script>
+<script src="/js/license.js?v=20261024a"></script>
 <!-- 试用 / 卡密激活：必须早于业务脚本，守卫才能在功能点击之前生效 -->
-<script src="/js/changelog.js?v=20261018a"></script>
-<script src="/js/app.js?v=20261018a"></script>
-<script src="/js/osr.js?v=20261018a"></script>
-<script src="/js/touchpad.js?v=20261018a"></script>
-<script src="/js/manual_record.js?v=20261018a"></script>
+<script src="/js/changelog.js?v=20261024a"></script>
+<script src="/js/app.js?v=20261024a"></script>
+<script src="/js/osr.js?v=20261024a"></script>
+<script src="/js/touchpad.js?v=20261024a"></script>
+<script src="/js/manual_record.js?v=20261024a"></script>
 </body>
 </html>
