@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1.0,minimum-scale=1.0,user-scalable=no,viewport-fit=cover">
 <title>Orbit</title>
 <link rel="stylesheet" href="/css/common.css?v=20261015a">
-<link rel="stylesheet" href="/css/player.css?v=20261015a">
+<link rel="stylesheet" href="/css/player.css?v=20261025a">
 <link rel="stylesheet" href="/css/cyber-base.css?v=20261015a">
 <link rel="stylesheet" href="/css/buttons.css?v=20261015a">
 </head>
@@ -19,6 +19,11 @@
              放在顶栏「返回」右侧而不是右边 —— 右上角是同步胶囊 .sync 的地盘，会压住按钮。 -->
         <div class="topbar-actions">
             <button class="topbar-btn" id="dashBtn" type="button" title="一键冲刺：点一下进档位 1（120 次/分），再点档位 2 / 3，第 4 下关闭">冲刺</button>
+            <!-- 配脚本：iOS 上视频来自相册、脚本只能存「文件」，两者名字天生不同名，
+                 一起导入也配不上。这里直接挑 .funscript，原生会改名成 <视频名>.funscript
+                 落到视频同目录，前端随即重新探活，不必退出重进。
+                 浏览器里没有原生桥，「文件」选择器也不存在，按钮会自动隐藏。 -->
+            <button class="topbar-btn topbar-btn--script" id="attachScriptBtn" type="button" title="把脚本文件（.funscript）配到当前视频，配好后自动随播">配脚本</button>
         </div>
         <div class="title" id="videoTitle"></div>
     </div>
@@ -217,6 +222,6 @@
 <script src="/js/custom-select.js?v=20261015a"></script>
 <script src="/js/license.js?v=20261015a"></script>
 <!-- 试用 / 卡密激活：必须早于 player.js，守卫才能在播放点击之前生效 -->
-<script src="/js/player.js?v=20261023a"></script>
+<script src="/js/player.js?v=20261025a"></script>
 </body>
 </html>

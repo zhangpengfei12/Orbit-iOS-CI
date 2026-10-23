@@ -5728,11 +5728,43 @@ window.addEventListener('message', function(e) {
     if (d && d.__orbitPlay) { libPlayByKey(d.__orbitPlay, d.title); return; }
     // 播放器同步当前播放模式，换片时沿用
     if (d && d.__orbitPlayMode) { libPlayMode = String(d.__orbitPlayMode); return; }
+
+    // 「配脚本」：桥只注入主 frame（forMainFrameOnly），iframe 里的播放器拿不到
+    // window.Orbit，所以由这里（主 frame）代调原生，成功后把结果推回 iframe。
+    if (d && d.__orbitAttachScript) {
+        if (window.Orbit && typeof window.Orbit.attachScript === 'function') {
+            window.Orbit.attachScript(String(d.__orbitAttachScript));
+        } else {
+            libPostToPlayer({ __orbitBridge: 'no' });
+        }
+        return;
+    }
+    // 播放器进页面时问一次「父页有没有桥」，据此决定「配脚本」按钮显不显示
+    if (d && d.__orbitNeedBridge) {
+        var has = !!(window.Orbit && typeof window.Orbit.attachScript === 'function');
+        libPostToPlayer({ __orbitBridge: has ? 'yes' : 'no' });
+        return;
+    }
+
     if (!d || !d.__orbitVideo) return;
     if (applyVideoRatio(d.w, d.h) && libRatioTimer) {
         clearInterval(libRatioTimer); libRatioTimer = null;   // 已拿到，停止轮询
     }
 });
+
+// 主 frame → iframe 播放器的单向通道（同源 postMessage）
+function libPostToPlayer(msg) {
+    var frame = $('libFrame');
+    if (frame && frame.contentWindow) {
+        try { frame.contentWindow.postMessage(msg, '*'); } catch (err) { }
+    }
+}
+
+// 原生配脚本成功回调：桥的 evaluateJavaScript 只打到主 frame，这里转发给 iframe 播放器，
+// 由它重置脚本探活闸门并重新请求 funscript-auto（否则胶囊会一直停在「未加载脚本」）。
+window.__onScriptAttached = function(key, names) {
+    libPostToPlayer({ __orbitScriptAttached: true, key: key || '', names: names || '' });
+};
 
 // 通道二：轮询直读 iframe 内的 <video>（同源，可读）。
 // 播放器侧的上报可能因 videoWidth 当时为 0 / 消息时序而丢失，这里补上。

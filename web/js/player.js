@@ -254,6 +254,8 @@
     var topbar = document.getElementById('topbar');
     // 「一键冲刺」按钮（顶栏，靠「返回」右边）
     var dashBtn = document.getElementById('dashBtn');
+    // 「配脚本」按钮（顶栏，冲刺右边；仅 iOS 有原生桥时显示）
+    var attachScriptBtn = document.getElementById('attachScriptBtn');
     var controls = document.getElementById('controls');
     // 顶部时间胶囊（curTime / durTime 两个 span 的父容器 id 就叫 ptime）
     var ptime = document.getElementById('ptime');
@@ -1571,6 +1573,64 @@ function isBg() { return nativeBg || document.hidden; }
         applyDash(on, dashLevel, DASH_SPEED);
         dashTip(on ? '冲刺 档位 ' + (dashLevel + 1) + ' · ' + DASH_SPEED + ' 次/分' : '冲刺已关闭');
     };
+    // 「配脚本」：视频从相册来、脚本只能放「文件」App，两边名字天生对不上
+    //   （相册导出的是 IMG_1234.MOV 这类名字），一起导入也配不成对。
+    //   这里直接挑 .funscript，由原生改名成 <视频名>.funscript 落到视频同目录，
+    //   成功后重置脚本探活的闸门并立刻重试，无需退出重进。
+    var HAS_BRIDGE = !!(window.Orbit && typeof window.Orbit.attachScript === 'function');
+
+    function attachScript() {
+        if (!videoName) { dashTip('还没选中视频'); return; }
+        // 防连点：原生选择器弹出有延迟，连按会叠两个
+        if (attachScriptBtn && attachScriptBtn.disabled) return;
+        if (attachScriptBtn) {
+            attachScriptBtn.disabled = true;
+            setTimeout(function () { if (attachScriptBtn) attachScriptBtn.disabled = false; }, 1500);
+        }
+        if (HAS_BRIDGE) {
+            window.Orbit.attachScript(videoName);
+        } else if (IS_EMBED && window.parent) {
+            // 内嵌时桥只注入主 frame，iframe 里没有 window.Orbit —— 交给父页代调。
+            window.parent.postMessage({ __orbitAttachScript: videoName }, '*');
+        }
+    }
+
+    // 配好之后：闸门必须一起重置。只把 osrScriptLoaded 置 false 不够 ——
+    // osrScriptTries 已被啃到 4、genState 停在 skip 时，ensureScriptLoaded 会直接短路返回。
+    function onScriptReady(names) {
+        dashTip('脚本已配上：' + String(names || '').split(',').join(' + '));
+        osrScriptLoaded = false;
+        osrScriptTries = 0;
+        genState = '';
+        genMsg = '';
+        osrScriptNames = [];
+        ensureScriptLoaded();
+    }
+
+    if (attachScriptBtn) {
+        attachScriptBtn.onclick = attachScript;
+        if (HAS_BRIDGE) {
+            // 独立播放页（主 frame）：桥直接用
+        } else if (IS_EMBED && window.parent) {
+            // 内嵌：先问父页有没有桥，没有就把按钮藏掉（答复见下方 message 监听）
+            try { window.parent.postMessage({ __orbitNeedBridge: 1 }, '*'); } catch (e) { }
+        } else {
+            // 浏览器里直接开播放页：没有原生桥，「文件」选择器也不存在
+            attachScriptBtn.style.display = 'none';
+        }
+    }
+
+    // 原生回调：播放页自己就是主 frame 时走这条；内嵌时由父页转发 __orbitScriptAttached
+    window.__onScriptAttached = function (key, names) { onScriptReady(names); };
+
+    window.addEventListener('message', function (e) {
+        var d = e.data;
+        if (!d || typeof d !== 'object') return;
+        if (d.__orbitScriptAttached) { onScriptReady(d.names); return; }
+        if (d.__orbitBridge === 'no' && attachScriptBtn) {
+            attachScriptBtn.style.display = 'none';
+        }
+    });
     // 进页面先把后端真实状态读回来（换片 / 刷新 / 上一页复位之后按钮态要跟设备一致）
     (function initDash() {
         if (!dashBtn) return;

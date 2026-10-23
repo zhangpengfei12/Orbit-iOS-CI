@@ -250,6 +250,10 @@ enum NativeBridge {
                 }
                 // 回给前端的是「媒体根目录」——后续 __onFolderPicked 会 saveLocalRoot →
                 // browsePath → /api/refresh，整条选片后自动加载的流程原样复用。
+                // 在这之前先做一次「同批自动配对」：用户一次多选了视频 + 脚本但两者不同名
+                // （很常见：片子是中文名、脚本是作者用的英文名/hash），本批恰好 1 个视频时
+                // 直接把脚本改到视频名下，不必再点「配脚本」手动挂。
+                MediaStore.shared.pairLooseScripts(imported: imported)
                 JsEmit.js(buildCallback("__onFolderPicked", [.string(MediaStore.rootRel)]))
                 Diagnostics.shared.log("PICK", "添加视频：选中 \(urls.count) 个，导入 \(imported.count) 个")
             }
@@ -267,6 +271,28 @@ enum NativeBridge {
                     .string(first.rel), .string(first.name), .int(Int(first.size)), .bool(false)
                 ]))
                 JsEmit.js(buildCallback("__onFolderPicked", [.string(MediaStore.rootRel)]))
+            }
+        case "attachScript":
+            // 「配脚本」：视频从相册进来、脚本存在「文件」里，两者天生不同名。
+            // 让用户直接挑脚本，原生按视频名改名落到同目录（见 MediaStore.attachScripts）。
+            // 参数：[0] 视频的 Documents 相对路径。
+            let videoRel = a.first?.asString ?? ""
+            guard !videoRel.isEmpty else {
+                Diagnostics.shared.log("PICK", "配脚本：没拿到视频 key，忽略")
+                return
+            }
+            MediaPicker.shared.presentScriptPicker { urls in
+                guard !urls.isEmpty else { return }     // 用户取消：不打扰
+                let saved = MediaStore.shared.attachScripts(videoRel: videoRel, scriptURLs: urls)
+                guard !saved.isEmpty else {
+                    MediaPicker.alert("脚本没配上",
+                        "没能把这个脚本挂到当前视频上。\n常见原因：\n• 当前播放的是网络共享（SMB）里的视频 —— 请把脚本放到共享里视频的同目录；\n• 文件还在 iCloud 未下载；\n• 选中的不是脚本文件。")
+                    return
+                }
+                JsEmit.js(buildCallback("__onScriptAttached", [
+                    .string(videoRel), .string(saved.joined(separator: ","))
+                ]))
+                Diagnostics.shared.log("PICK", "配脚本成功：\(saved.joined(separator: ", "))")
             }
         case "grantRecordFolder":
             // iOS 没有「给某个目录写权限」这一步：App 沙盒本来就可写。

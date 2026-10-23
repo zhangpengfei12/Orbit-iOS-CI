@@ -78,6 +78,48 @@ final class MediaPicker: NSObject, UIDocumentPickerDelegate, PHPickerViewControl
         }
     }
 
+    // MARK: - 配脚本（只挑 .funscript）
+    //
+    // 场景：视频从「相册」导入，脚本只能存在「文件」App 里，两边名字对不上，
+    // 一起导入也配不成对。这里单独开一条只认脚本的选择通道，选中后由
+    // MediaStore.attachScripts 按视频名改名落到同目录。
+
+    func presentScriptPicker(completion: @escaping ([URL]) -> Void) {
+        DispatchQueue.main.async {
+            self.stateLock.lock()
+            self.didComplete = false
+            self.stateLock.unlock()
+            self.completion = completion
+            self.wantsSingle = false        // 多轴脚本（L0/R0/R1）允许一次选全
+            guard let top = Self.topViewController() else {
+                Diagnostics.shared.log("PICK", "拿不到顶层控制器，「配脚本」选择器无法弹出")
+                self.finish([])
+                return
+            }
+            let vc = UIDocumentPickerViewController(forOpeningContentTypes: Self.scriptContentTypes(), asCopy: true)
+            vc.delegate = self
+            vc.allowsMultipleSelection = true
+            top.present(vc, animated: true)
+        }
+    }
+
+    /// 脚本选择器放行的类型。
+    /// - `app.orbit.funscript`：本 App 在 Info.plist 里声明的导入类型（conforms public.json）；
+    /// - `.json`：不少工具导出的脚本直接用 .json 后缀，一并放行，落地时统一改名成 .funscript；
+    /// - 兜底 `.item`：万一自定义 UTI 没注册成功（旧包），至少不会给用户一个全灰的空列表。
+    private static func scriptContentTypes() -> [UTType] {
+        var types: [UTType] = []
+        if let t = UTType("app.orbit.funscript") {
+            types.append(t)
+        } else if let t = UTType(filenameExtension: "funscript") {
+            types.append(t)
+        }
+        if let j = UTType(filenameExtension: "json"), !types.contains(j) {
+            types.append(j)
+        }
+        return types.isEmpty ? [.item] : types
+    }
+
     // MARK: - 文件（Files / iCloud / 其他 App）
 
     private func openDocumentPicker(multiple: Bool) {
