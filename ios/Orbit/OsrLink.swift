@@ -241,6 +241,13 @@ enum NativeBridge {
             MediaPicker.shared.presentFromTop(multiple: true) { urls in
                 guard !urls.isEmpty else { return }     // 用户取消：不回抛，前端右侧提示保持原样
                 let imported = MediaStore.shared.importFiles(urls)
+                // 拷贝失败必须吭声：原来这里静默返回，用户看到的就是「选完什么都没发生」
+                guard !imported.isEmpty else {
+                    Diagnostics.shared.log("PICK", "添加视频：\(urls.count) 个全部导入失败")
+                    MediaPicker.alert("导入失败",
+                        "选中的文件没能拷进 App 媒体库。\n常见原因：视频还在 iCloud 未下载、或文件已被其他 App 移走。\n可先用「照片」打开播放几秒，或改用「从文件选」。")
+                    return
+                }
                 // 回给前端的是「媒体根目录」——后续 __onFolderPicked 会 saveLocalRoot →
                 // browsePath → /api/refresh，整条选片后自动加载的流程原样复用。
                 JsEmit.js(buildCallback("__onFolderPicked", [.string(MediaStore.rootRel)]))
@@ -250,7 +257,12 @@ enum NativeBridge {
             MediaPicker.shared.presentFromTop(multiple: false) { urls in
                 guard !urls.isEmpty else { return }
                 let imported = MediaStore.shared.importFiles(urls)
-                guard let first = imported.first else { return }
+                guard let first = imported.first else {
+                    Diagnostics.shared.log("PICK", "选择视频：导入失败")
+                    MediaPicker.alert("导入失败",
+                        "这个视频没能拷进 App 媒体库。\n常见原因：视频还在 iCloud 未下载、或格式特殊。\n可先用「照片」打开播放几秒，或改用「从文件选」。")
+                    return
+                }
                 JsEmit.js(buildCallback("__onPickVideo", [
                     .string(first.rel), .string(first.name), .int(Int(first.size)), .bool(false)
                 ]))

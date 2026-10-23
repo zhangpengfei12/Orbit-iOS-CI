@@ -20,6 +20,11 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- 相册：MediaPicker 走 PHPickerViewController（系统托管选择器，本身不弹权限）。
+	     但缺这个描述串时，系统在「相册导入」路径上一律静默失败（不报错、不回调），
+	     用户看到的就是「选了视频但什么都没发生」。必须声明。 -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>用于从相册选择视频导入 App 媒体库播放（仅读取您主动选中的视频）</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>用于连接并控制已配对的硬件设备</string>
 	<key>NSLocalNetworkUsageDescription</key>
@@ -53,5 +58,62 @@
 	<true/>
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<!-- 配合 UIFileSharingEnabled：允许「文件」App 原地打开本 App 容器内的文件 -->
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<!-- 关键：不在相册 / 文件 App 的分享面板里注册文档类型，Orbit 根本不会出现在
+	     「分享 → 发送到 App」列表中（表现为「相册视频无法发送到这个 App」）。
+	     LSHandlerRank=Alternate 表示只作为候选打开方式，不抢系统默认播放器。 -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>视频</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.movie</string>
+				<string>public.mpeg-4</string>
+				<string>com.apple.quicktime-movie</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Funscript 交互脚本</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>app.orbit.funscript</string>
+			</array>
+		</dict>
+	</array>
+	<!-- .funscript 不是系统已知类型，必须自己声明，否则分享面板里同样看不到本 App -->
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>app.orbit.funscript</string>
+			<key>UTTypeDescription</key>
+			<string>Funscript 交互脚本</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+				<string>public.text</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>funscript</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

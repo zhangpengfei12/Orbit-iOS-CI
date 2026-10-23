@@ -40,7 +40,48 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         if let crash = CrashReporter.pendingCrashText() {
             CrashReporter.present(on: window, text: crash)
         }
+
+        // 冷启动场景：从相册 / 文件 App「分享 → Orbit」打开时，系统把文件 URL 放在
+        // launchOptions 里（热启动走下面的 application(_:open:options:)）。
+        if let url = launchOptions?[.url] as? URL {
+            ingestExternalFiles([url])
+        }
         return true
+    }
+
+    // MARK: - 接收外部文件（相册 / 文件 App 的「分享 → 拷贝到 Orbit」）
+    //
+    // 之前只做了 App 内部的选择器（MediaPicker），没有任何「被外部打开」的入口，
+    // 所以相册里分享面板根本找不到本 App —— 那需要 Info.plist 注册
+    // CFBundleDocumentTypes（已补 public.movie / funscript），二者缺一不可。
+
+    func application(_ app: UIApplication, open url: URL,
+                     options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        ingestExternalFiles([url])
+        return true
+    }
+
+    /// 把外部文件拷进媒体库，并通知网页刷新列表。
+    private func ingestExternalFiles(_ urls: [URL]) {
+        var imported: [(name: String, rel: String, size: Int64)] = []
+        for url in urls {
+            // 外部容器里的文件必须先拿安全作用域授权才能读；Inbox 内的副本会返回 false，
+            // 但不影响读取（统一成对调用，别漏 stop）。
+            let scoped = url.startAccessingSecurityScopedResource()
+            let r = MediaStore.shared.importFiles([url])
+            if scoped { url.stopAccessingSecurityScopedResource() }
+            imported.append(contentsOf: r)
+            if r.isEmpty {
+                Diagnostics.shared.log("PICK", "外部分享文件导入失败：\(url.lastPathComponent)")
+            }
+        }
+        guard !imported.isEmpty else { return }
+        Diagnostics.shared.log("PICK", "外部分享导入成功 \(imported.count) 个")
+        // 冷启动时网页可能还没加载完（sink 建立晚于本方法），延迟一点再通知前端刷新。
+        let js = buildCallback("__onFolderPicked", [.string(MediaStore.rootRel)])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            JsEmit.js(js)
+        }
     }
 
     // MARK: - 启动里程碑诊断（摇一摇诊断页可见；用于无 .ips 日志时定位启动崩溃点）
