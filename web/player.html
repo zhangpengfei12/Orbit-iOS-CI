@@ -14,7 +14,8 @@
 <div id="container">
     <div class="topbar" id="topbar">
         <a href="/"><span class="back-arrow">&larr;</span> 返回</a>
-        <!-- 一键冲刺：只给脚本驱动的 L0 主轴加速；旋转/俯卧补偿等其它轴按原速继续。
+        <!-- 一键冲刺：先把六轴送回中位，再只驱动 L0（避免脚本残留姿态造成「斜着冲刺」）；
+             冲刺期间旋转 / 摆动冻结。
              放在顶栏「返回」右侧而不是右边 —— 右上角是同步胶囊 .sync 的地盘，会压住按钮。 -->
         <div class="topbar-actions">
             <button class="topbar-btn" id="dashBtn" type="button" title="一键冲刺：点一下进档位 1（120 次/分），再点档位 2 / 3，第 4 下关闭">冲刺</button>
@@ -216,6 +217,6 @@
 <script src="/js/custom-select.js?v=20261015a"></script>
 <script src="/js/license.js?v=20261015a"></script>
 <!-- 试用 / 卡密激活：必须早于 player.js，守卫才能在播放点击之前生效 -->
-<script src="/js/player.js?v=20261015a"></script>
+<script src="/js/player.js?v=20261023a"></script>
 </body>
 </html>

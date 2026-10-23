@@ -214,11 +214,28 @@ final class ScriptPlayer {
 
     func setDash(on: Bool, speed: Float, amp: Int) {
         lock.lock()
+        let wasOn = dashOn
         dashOn = on
         dashSpeed = speed > 0 ? speed : 60
         dashAmp = amp > 0 ? amp : 100
         if !on { dashPhases.removeAll() }
         lock.unlock()
+
+        // 「先回中再冲刺」：只在「关闭 → 开启」的那一下把六轴先送回中位，再让 L0 满程往复。
+        // 冲刺只驱动 L0，脚本残留的 L1/L2/R0/R1/R2 若停在非中位，整台设备会呈斜姿态
+        // （用户反馈：冲刺时设备斜着冲）。切档位（120→150→180）时 wasOn 已为 true，
+        // 不会重复回中把正在进行的冲刺打断。
+        if on && !wasOn {
+            let ctx = OsrLink.cmdContext()
+            var body = ""
+            for axis in AXIS_NAMES {
+                body += buildAxisPosCommand(ctx, axis, AXIS_VALUE_MAX / 2, 250)
+                livePos[axis] = AXIS_VALUE_MAX / 2
+            }
+            OsrLink.dispatch(ctx.prefix + body + ctx.suffix)      // 与 tick 一致地带协议前后缀
+            lock.lock(); dashPhases.removeAll(); lock.unlock()   // L0 相位归零，从中位重新起步
+        }
+
         if on { startLoop() }
     }
 
@@ -417,8 +434,9 @@ final class ScriptPlayer {
             }
         }
 
-        // ④ 旋转 / 摆动：只在播放态推进相位
-        if pl || !mode.isEmpty {
+        // ④ 旋转 / 摆动：只在播放态推进相位。冲刺期间冻结 —— 否则旋转会立刻把刚回中的
+        //    R0/R1/R2 重新带偏，又变回「斜着冲」。
+        if (pl || !mode.isEmpty) && !dash {
             body += buildRotationCommands(ctx, elapsed, &spinAngles, &sweepPhases)
         }
 
