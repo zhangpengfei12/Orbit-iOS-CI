@@ -20,7 +20,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         }
         Self.markLaunchStep("main_started")
 
-        Diagnostics.shared.log("APP", "启动 \(Bundle.main.bundleIdentifier ?? "?")")
+        // 启动日志带上 build 号：对外版本号一直是 1.0.1，光看「版本信息」分不清
+        // 手机装的到底是哪一次 CI 构建。诊断页截图里有 (76) 这种才是真·build 号。
+        let info = Bundle.main.infoDictionary
+        let shortVer = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let buildNo = info?["CFBundleVersion"] as? String ?? "?"
+        Diagnostics.shared.log("APP", "启动 \(Bundle.main.bundleIdentifier ?? "?") v\(shortVer) build \(buildNo)")
         // 服务必须早于 WebView 加载，否则首页拿到的是连接失败
         OrbitServer.shared.start()
         Self.markLaunchStep("server_started")

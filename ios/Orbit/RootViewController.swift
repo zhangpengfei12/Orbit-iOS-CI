@@ -214,12 +214,24 @@ final class BridgeProxy: NSObject, WKScriptMessageHandler {
             Diagnostics.shared.log("JS", text)
             return
         }
-        // 桥调用：注入脚本统一 postMessage 到小写 orbit（body = {kind, method, args} JSON）
+        // 桥调用：注入脚本 postMessage 到小写 orbit（body = {kind, method, args}）
+        // ⚠⚠ 两种 body 都要接：
+        //   ① String —— JSON 文本（注入脚本现在统一 JSON.stringify 后发送，首选格式）；
+        //   ② [String: Any] —— JS 直接传对象时 WKWebView 会转成 NSDictionary。
+        //   build 75 的「＋选视频」点了毫无反应，根因就是这里只认 String，而注入脚本
+        //   当时发的是对象 → `as? String` 失败 → 整条桥调用被丢弃，日志只有一句
+        //   「桥消息解析失败: {args = (); kind = orbit; method = pickFolder;}」。
+        //   注意这不止影响选视频：所有 window.Orbit.* 调用都走同一条路，蓝牙扫描等一并失效。
         if message.name == "orbit" {
-            guard let body = message.body as? String,
-                  let data = body.data(using: .utf8),
-                  let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                  let call = JsCall.parse(obj) else {
+            var obj: [String: Any]?
+            if let body = message.body as? String, let data = body.data(using: .utf8) {
+                obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            } else if let dict = message.body as? [String: Any] {
+                obj = dict
+            } else {
+                obj = nil
+            }
+            guard let parsed = obj, let call = JsCall.parse(parsed) else {
                 Diagnostics.shared.log("JS", "桥消息解析失败: \(String(describing: message.body))")
                 return
             }

@@ -208,7 +208,14 @@ func bridgeInjectionScript() -> String {
             return function(){
               var args = Array.prototype.slice.call(arguments);
               try {
-                window.webkit.messageHandlers.orbit.postMessage({kind: kind, method: prop, args: args});
+                // ⚠⚠ 必须 JSON.stringify 后再 post：原生按「JSON 文本」解析
+                //   （RootViewController → JSONSerialization）。
+                //   直接传对象会被 WKWebView 转成 NSDictionary，原生 `as? String` 失败
+                //   → 整条桥调用被静默丢弃（build 75 打「＋选视频」毫无反应的根因）。
+                //   这里保持字符串发送，与原生的首选格式一致。
+                window.webkit.messageHandlers.orbit.postMessage(
+                  JSON.stringify({kind: kind, method: prop, args: args})
+                );
               } catch(e) {}
               return undefined;
             };
