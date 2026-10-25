@@ -659,16 +659,8 @@
     background:rgba(47,183,232,.18);border-color:rgba(47,183,232,.6);color:#eaf6ff;
     box-shadow:0 0 14px -6px rgba(47,183,232,.8);
 }
-/* tab 栏右侧的「＋ 选视频」：本地/网络两个 tab 是 flex:1 等分，这个按钮不参与等分。
-   作用是把「从相册/文件导入」放到播放器页可直接点到的地方（设置页入口太深）。 */
-.lib-tab-add{
-    flex:0 0 auto;padding:9px 12px;cursor:pointer;white-space:nowrap;
-    border:1px solid rgba(47,183,232,.45);border-radius:8px;
-    background:rgba(47,183,232,.14);color:#dff2ff;font-size:13px;font-weight:600;
-    -webkit-tap-highlight-color:transparent;
-}
-.lib-tab-add:active{background:rgba(47,183,232,.3)}
-.lib-tab-add[disabled]{opacity:.5}
+/* 「＋ 选视频」按钮已移除（与上方四按钮的「选择视频」重复），对应样式 .lib-tab-add 一并删除。
+   两个 tab 仍用 flex:1 等分整行。 */
 .lib-tab-pane{} /* 仅作容器，显隐由 JS 控制 */
 .lib-smb-setup{padding:20px 12px;text-align:center}
 .lib-smb-setup-p{margin:0 0 14px;font-size:13px;color:#9fb3c8;line-height:1.6}

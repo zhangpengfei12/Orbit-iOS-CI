@@ -8,6 +8,19 @@
 
     function $(id) { return document.getElementById(id); }
 
+    /* 是否 iOS：与 app.js 的 orbitIsIOS() 同一判据。
+       osr.js 是独立 IIFE，拿不到 app.js 的函数，故本地再判一次；
+       原生桥自报 platform()==='ios'，或 /api/status 下发的 __orbitPlatform。 */
+    function osrIsIOS() {
+        try {
+            if (window.Orbit && typeof window.Orbit.platform === 'function') {
+                var p = window.Orbit.platform();
+                if (typeof p === 'string' && p) return p === 'ios';
+            }
+        } catch (e) { }
+        return window.__orbitPlatform === 'ios';
+    }
+
     var AXIS_ORDER = ['L0', 'L1', 'L2', 'R0', 'R1', 'R2'];
     var AXIS_LABEL = {
         L0: '上下', L1: '前后', L2: '左右',
@@ -268,10 +281,10 @@
 
     /* ---------- 连接方式：先选方式，再按方式输入参数 ---------- */
     function methodFromConnectionType(t) {
-        // ⚠ iOS 版没有 USB / 串口卡片（页面里只留了 bt 与 wifi 两张），
-        //   若旧配置里存着 'Serial' 直接沿用会走到 usb 分支：两张卡片全被隐藏、
-        //   参数区一片空白，看起来像「设置页坏了」。这里统一收敛回 WiFi。
-        if (t === 'BluetoothSerial') return 'bt';
+        // ⚠ iOS 版没有 USB / 串口卡片，也**已移除蓝牙连接方式**（页面里只留 WiFi 一张卡），
+        //   若旧配置里存着 'Serial' / 'BluetoothSerial' 直接沿用会走到被隐藏的分支：
+        //   卡片区一片空白、参数区也不显示，看起来像「设置页坏了」。这里统一收敛回 WiFi。
+        if (t === 'BluetoothSerial') return osrIsIOS() ? 'wifi' : 'bt';
         return 'wifi'; // UDP
     }
 
@@ -284,6 +297,9 @@
     }
 
     function applyMethod(method) {
+        // iOS 只保留 WiFi：任何走到这里的 'bt'（旧设置、其它入口的残留调用）都收敛回 wifi，
+        // 否则 #connBt 会被重新 display 出来，而它的入口卡片已被 app.js 的 iosHideDeadFeatures 藏掉。
+        if (method === 'bt' && osrIsIOS()) method = 'wifi';
         currentMethod = method;
         var cards = document.querySelectorAll('#connMethods .conn-method');
         Array.prototype.forEach.call(cards, function (c) {

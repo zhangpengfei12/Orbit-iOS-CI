@@ -6,14 +6,14 @@
      顶栏返回键就避不开状态栏 / 刘海 / 挖孔（首页 home.html 早已是这套写法）。 -->
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1.0,minimum-scale=1.0,user-scalable=no,viewport-fit=cover">
 <title>Orbit</title>
-<link rel="stylesheet" href="/css/common.css?v=20261025a">
-<link rel="stylesheet" href="/css/app.css?v=20261025a">
-<link rel="stylesheet" href="/css/nav.css?v=20261025a">
-<link rel="stylesheet" href="/css/osr.css?v=20261025a">
-<link rel="stylesheet" href="/css/lib.css?v=20261025a">
-<link rel="stylesheet" href="/css/cyber-base.css?v=20261025a">
-<link rel="stylesheet" href="/css/touchpad.css?v=20261025a">
-<link rel="stylesheet" href="/css/buttons.css?v=20261025a">
+<link rel="stylesheet" href="/css/common.css?v=20261026a">
+<link rel="stylesheet" href="/css/app.css?v=20261026a">
+<link rel="stylesheet" href="/css/nav.css?v=20261026a">
+<link rel="stylesheet" href="/css/osr.css?v=20261026a">
+<link rel="stylesheet" href="/css/lib.css?v=20261026a">
+<link rel="stylesheet" href="/css/cyber-base.css?v=20261026a">
+<link rel="stylesheet" href="/css/touchpad.css?v=20261026a">
+<link rel="stylesheet" href="/css/buttons.css?v=20261026a">
 </head>
 <body>
 <div class="app">
@@ -82,7 +82,7 @@
             <div class="lib-actions">
                 <button class="lib-btn" type="button" id="libBtnConnect">连设备</button>
                 <button class="lib-btn lib-btn--primary" type="button" id="libBtnFolder">选择视频</button>
-                <button class="lib-btn" type="button" id="libBtnSmb" title="SMB 网络共享">SMB</button>
+                <button class="lib-btn" type="button" id="libBtnSmb" title="网络共享（SMB / NAS）">网络共享</button>
                 <button class="lib-btn" type="button" id="libBtnAxis">轴设置</button>
             </div>
 
@@ -103,11 +103,9 @@
             <div class="lib-sec">
                 <div class="lib-tabs">
                     <button class="lib-tab active" type="button" data-lt="local" id="libTabLocal">本地</button>
-                    <button class="lib-tab" type="button" data-lt="smb" id="libTabSmb">网络</button>
-                    <!-- 选视频快捷入口：iOS 没有系统文件夹授权，导入只能走系统选择器；
-                         设置页入口比较深（且部分版本没放出设置），这里给一个随手可点的位置。
-                         点击调 window.Orbit.pickFolder()，导入完成后 __onFolderPicked 会自动刷新本地列表。 -->
-                    <button class="lib-tab-add" type="button" id="libAddVideo" title="从相册或文件添加视频">＋ 选视频</button>
+                    <button class="lib-tab" type="button" data-lt="smb" id="libTabSmb">网络共享</button>
+                    <!-- 这里的「＋ 选视频」按钮已移除：与上方四按钮里的「选择视频」重复，
+                         两个入口都调同一个 pickFolder，留着只会让用户犹豫点哪个。 -->
                 </div>
 
                 <!-- 本地 tab：最近播放（手机上加载过的视频）+ 本地文件夹浏览 -->
@@ -137,7 +135,7 @@
                     <div class="lib-loading" id="libSmbLoading" style="display:none">连接中...</div>
                     <!-- 未配置共享时的引导 -->
                     <div class="lib-smb-setup" id="libSmbSetup" style="display:none">
-                        <p class="lib-smb-setup-p">尚未配置 SMB 网络共享。</p>
+                        <p class="lib-smb-setup-p">尚未配置网络共享。</p>
                         <button class="lib-btn lib-btn--primary" type="button" id="libSmbSetupBtn">配置网络共享</button>
                     </div>
                 </div>
@@ -626,7 +624,7 @@
                         <h2 class="panel-title">OSR 设备</h2>
                     </div>
                     <div class="settings-section">
-                        <p class="panel-desc">连接 OSR 运动设备（蓝牙 / WiFi 网络），连接成功后即可直接驱动设备。</p>
+                        <p class="panel-desc">连接 OSR 运动设备（WiFi 网络），连接成功后即可直接驱动设备。</p>
                         <div class="form-group">
                             <label class="form-label">连接方式</label>
                             <div class="conn-methods" id="connMethods">
@@ -682,7 +680,7 @@
                             </div>
                         </div>
 
-                        <!-- iOS 版已移除 USB 数据线连接方式（仅保留蓝牙 / WiFi） -->
+                        <!-- iOS 版已移除 USB 数据线与蓝牙两种连接方式（只保留 WiFi） -->
                         <!-- 后台运行（2026-09-19 第十一轮）
                              切后台/锁屏后设备继续跑靠三层：① 原生播放时钟自驱 ② 前台服务 + 唤醒锁
                              ③ 页面拿到原生前后台信号。其中第 ② 层还需要用户在系统里放行一次
@@ -877,7 +875,7 @@
                                      故 iOS 版隐藏按钮，改为引导使用 App 内自带的蓝牙（BLE）与 WiFi（UDP）。 -->
                                 <button class="tool-btn" id="osrOpenWebApp" type="button" style="display:none">网页操作</button>
                             </div>
-                            <div style="margin-top:8px;font-size:12px;color:#9a9ab5;line-height:1.6">iOS 的浏览器不支持网页直连串口 / 蓝牙，请直接用本页上方的连接方式：<strong>蓝牙</strong>用 App 内扫描配对，<strong>WiFi</strong>填设备 IP 与端口。设备自带的配网页可点「打开设备配置」在 Safari 里打开。</div>
+                            <div style="margin-top:8px;font-size:12px;color:#9a9ab5;line-height:1.6">iOS 的浏览器不支持网页直连串口 / 蓝牙，请直接用本页上方的连接方式：<strong>WiFi</strong> 填设备 IP 与端口。设备自带的配网页可点「打开设备配置」在 Safari 里打开。</div>
                         </div>
 
                         <!-- v2.7.21：自动模式「网页操作」下方的浏览器准备提示 + 连接方法图
@@ -887,12 +885,11 @@
                         <div class="auto-web-tip" id="autoWebTip">
                             <div class="auto-web-tip-t">连不上设备？按下面几步检查</div>
                             <ol class="auto-web-tip-steps">
-                                <li>首次连蓝牙时系统会弹<strong>「允许使用蓝牙」</strong>，请点允许；误点拒绝后到<strong>系统设置 → Orbit → 蓝牙</strong>重新打开。</li>
-                                <li>用 WiFi（UDP）连接时，系统会弹<strong>「允许查找并连接本地网络设备」</strong>，同样要允许，否则发不出指令。</li>
+                                <li>用 WiFi（UDP）连接时，系统会弹<strong>「允许查找并连接本地网络设备」</strong>，请点允许，否则发不出指令（误点拒绝后到<strong>系统设置 → Orbit → 本地网络</strong>重新打开）。</li>
                                 <li>确认手机与设备处在<strong>同一个 Wi-Fi</strong>（设备配网请用 2.4GHz 频段），IP 与端口填的是设备实际地址。</li>
                                 <li>点上面的<strong>「连接测试」</strong>：设备有明显动作即链路打通；没动作先看右上角链路状态是否显示已连接。</li>
                             </ol>
-                            <div class="auto-web-tip-note">iOS 没有 USB / 串口连接方式，只能走蓝牙或 WiFi；设备自带配网页点「打开设备配置」会在 Safari 里打开。</div>
+                            <div class="auto-web-tip-note">iOS 侧只支持 WiFi 连接，没有 USB / 串口 / 蓝牙方式；设备自带配网页点「打开设备配置」会在 Safari 里打开。</div>
                         </div>
                     </div>
 
@@ -1193,18 +1190,17 @@
                             <div class="hm-help-h">一、快速上手</div>
                             <ol class="hm-help-list">
                                 <li>首次进入会提示<strong>试用 15 天</strong>：点「开始试用」才开始计时，到期后仍可进首页，点具体功能才弹激活面板；面板里可直接复制机器码、查看客服微信号与客服二维码。</li>
-                                <li>在「设置 → 媒体库」添加本机或 SMB 网络共享的视频目录，等待扫描完成。</li>
-                                <li>在「设置 → 设备」选择连接方式（蓝牙 / WiFi-UDP），保存后点「连接测试」确认设备可达。</li>
+                                <li>在「设置 → 媒体库」添加本机或网络共享的视频目录，等待扫描完成。</li>
+                                <li>在「设置 → 设备」选择连接方式（仅 WiFi-UDP），保存后点「连接测试」确认设备可达。</li>
                                 <li>在「设置 → OSR 轴设置」按你的设备校正各轴方向与行程范围。</li>
                                 <li>返回首页点「视频库」进入媒体库，打开影片即可播放；同目录同名的 <code>.funscript</code> 会自动加载并跟随。</li>
                             </ol>
                             <div class="hm-help-h">二、媒体库与视频</div>
-                            <p class="hm-help-p">媒体库支持本机目录与 SMB 网络共享（如 NAS）。进入后按目录浏览，视频以列表展示。点开影片即进入播放页；同目录若存在同名 <code>.funscript</code> 脚本，会自动关联并在播放时同步驱动 OSR 设备。</p>
+                            <p class="hm-help-p">媒体库支持本机目录与网络共享（如 NAS）。进入后按目录浏览，视频以列表展示。点开影片即进入播放页；同目录若存在同名 <code>.funscript</code> 脚本，会自动关联并在播放时同步驱动 OSR 设备。</p>
                             <p class="hm-help-p">首页「视频库」即你的媒体库入口，点卡片进入；面包屑可逐级返回。选完视频若要存脚本：iOS 无法对系统文件夹单独授权，请把同名 <code>.funscript</code> 和视频一起导入 App 媒体库（导入时一并多选选上，或到「设置 → 媒体库」重新导入），脚本即会自动跟随，不必额外授权。</p>
                             <div class="hm-help-h">三、连接 OSR 设备</div>
-                            <p class="hm-help-p">在「设置 → 设备」中选择一种连接方式：</p>
+                            <p class="hm-help-p">设备连接方式只保留 WiFi（UDP）一种：</p>
                             <ul class="hm-help-list">
-                                <li><strong>蓝牙</strong>：点「蓝牙」进入设备页扫描，选中设备直接连接（BLE 串口）。</li>
                                 <li><strong>WiFi（UDP）</strong>：填入设备 IP 与端口（默认 <code>192.168.1.88:8000</code>），适合局域网或广播场景。</li>
                             </ul>
                             <p class="hm-help-p">配置后务必点「连接测试」：成功表示链路可达；失败会提示原因（IP 不可达 / 端口拒绝 / 设备未开机等）。首页「设备」磁贴的副标题会实时显示链路状态：<strong>离线</strong>（硬件输出关闭）／<strong>待机</strong>（UDP 无回执）／<strong>已连接</strong>（有真实链路证据）／<strong>未连接</strong>／<strong>发送失败</strong>。</p>
@@ -1689,11 +1685,11 @@
     <div class="modal-overlay" id="smbQuickConfigModal" style="display:none">
         <div class="modal-dialog">
             <div class="modal-header">
-                <h3 class="modal-title">SMB 网络共享</h3>
+                <h3 class="modal-title">网络共享</h3>
                 <button class="modal-close" id="btnSmbQuickConfigClose" type="button">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="panel-desc">填写 SMB/CIFS 共享信息，连接后即可浏览远程视频。同名 <code>.funscript</code> 脚本会自动随视频加载。</p>
+                <p class="panel-desc">填写网络共享信息（SMB / CIFS 协议），连接后即可浏览远程视频。同名 <code>.funscript</code> 脚本会自动随视频加载。</p>
                 <div class="form-group">
                     <label class="form-label">主机地址（IP）</label>
                     <input class="form-input" id="smbqHost" placeholder="192.168.1.100">
@@ -1732,7 +1728,7 @@
     <div class="modal-overlay" id="smbQuickBrowseModal" style="display:none">
         <div class="modal-dialog">
             <div class="modal-header">
-                <h3 class="modal-title">SMB 共享目录</h3>
+                <h3 class="modal-title">网络共享目录</h3>
                 <button class="modal-close" id="btnSmbQuickBrowseClose" type="button">&times;</button>
             </div>
             <div class="modal-breadcrumb" id="smbqBreadcrumb"></div>
@@ -1745,13 +1741,13 @@
         </div>
     </div>
 
-<script src="/js/custom-select.js?v=20261025a"></script>
-<script src="/js/license.js?v=20261025a"></script>
+<script src="/js/custom-select.js?v=20261026a"></script>
+<script src="/js/license.js?v=20261026a"></script>
 <!-- 试用 / 卡密激活：必须早于业务脚本，守卫才能在功能点击之前生效 -->
-<script src="/js/changelog.js?v=20261025a"></script>
-<script src="/js/app.js?v=20261025a"></script>
-<script src="/js/osr.js?v=20261025a"></script>
-<script src="/js/touchpad.js?v=20261025a"></script>
-<script src="/js/manual_record.js?v=20261025a"></script>
+<script src="/js/changelog.js?v=20261026a"></script>
+<script src="/js/app.js?v=20261026a"></script>
+<script src="/js/osr.js?v=20261026a"></script>
+<script src="/js/touchpad.js?v=20261026a"></script>
+<script src="/js/manual_record.js?v=20261026a"></script>
 </body>
 </html>

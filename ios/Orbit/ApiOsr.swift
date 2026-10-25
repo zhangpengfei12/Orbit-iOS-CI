@@ -306,11 +306,11 @@ enum ApiOsr {
         // 前端 osr.js 启动会拉 usb-devices；404 会让设备页初始化中断。
         server.get["/api/osr/usb-devices"] = { _ in
             json(["ok": true, "devices": [] as [Any],
-                  "note": "iOS 不支持 USB 主机（OTG）与串口，请用蓝牙或 WiFi 连接"])
+                  "note": "iOS 不支持 USB 主机（OTG）与串口，请用 WiFi 连接"])
         }
         server.post["/api/osr/usb-scan"] = { _ in
             json(["ok": true, "devices": [] as [Any],
-                  "note": "iOS 不支持 USB 主机（OTG）与串口，请用蓝牙或 WiFi 连接"])
+                  "note": "iOS 不支持 USB 主机（OTG）与串口，请用 WiFi 连接"])
         }
 
         // ── TCode 版本：真实落盘（此前占位恒回 AUTO，改了不生效）──

@@ -20,7 +20,17 @@ enum OsrLink {
     private static var lastUdpError: String?
 
     static func osrSettings() -> [String: Any] {
-        OrbitConfig.shared.dictionary(forKeyPath: "settings.osr")
+        var d = OrbitConfig.shared.dictionary(forKeyPath: "settings.osr")
+        // ⚠ iOS 版只保留 WiFi（UDP）这一种连接方式（v1.1.1 起前端「连接方式」已移除蓝牙卡片）。
+        //   老配置里若残留 connectionType=BluetoothSerial / btAddress，所有下游判断
+        //   （dispatch / status / connect-test / reset）都会走蓝牙分支，用户看到的会是
+        //   「未选择蓝牙设备」「蓝牙未连接」这类无法自救的失败。故在此统一收敛为 UDP。
+        //   Bluetooth 链路的实现（BtLink）保留，便于将来恢复。
+        if asStr(d["connectionType"], "UDP") == "BluetoothSerial" {
+            d["connectionType"] = "UDP"
+            d["btAddress"] = ""
+        }
+        return d
     }
 
     /// 从 settings.osr 组装 CmdContext（对齐安卓 OsrSettings.toCmdContext）。
@@ -286,7 +296,7 @@ enum NativeBridge {
                 let saved = MediaStore.shared.attachScripts(videoRel: videoRel, scriptURLs: urls)
                 guard !saved.isEmpty else {
                     MediaPicker.alert("脚本没配上",
-                        "没能把这个脚本挂到当前视频上。\n常见原因：\n• 当前播放的是网络共享（SMB）里的视频 —— 请把脚本放到共享里视频的同目录；\n• 文件还在 iCloud 未下载；\n• 选中的不是脚本文件。")
+                        "没能把这个脚本挂到当前视频上。\n常见原因：\n• 当前播放的是网络共享里的视频 —— 请把脚本放到共享里视频的同目录；\n• 文件还在 iCloud 未下载；\n• 选中的不是脚本文件。")
                     return
                 }
                 JsEmit.js(buildCallback("__onScriptAttached", [

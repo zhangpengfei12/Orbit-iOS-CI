@@ -79,11 +79,10 @@ function iosHideDeadFeatures() {
     //    首页卡片隐藏，只留已禁用的说明页入口（用户误入也只会看到「iOS 暂不支持」）。
     var recTile = $('hmTileRecord');
     if (recTile) recTile.style.display = 'none';
-    // 3) 文件夹选择器：iOS 没有系统文件夹授权，libBtnFolder（视频库「选择视频」）
-    //    与 tpPickFolder（手控触板「选择文件夹」）在 iOS 上点了只会落到不工作的文件夹页 / 无授权回调，
-    //    故在 iOS 直接隐藏，避免用户点到没用的东西。iOS 导入走「设置 → 媒体库」的相册 / 文件选择器。
-    var libFolderBtn = $('libBtnFolder');
-    if (libFolderBtn) libFolderBtn.style.display = 'none';
+    // 3) 手控触板「选择文件夹」：iOS 没有系统文件夹授权，tpPickFolder 点了只会落到不工作的
+    //    文件夹页 / 无授权回调，故隐藏。
+    //    ⚠ libBtnFolder（视频库「选择视频」）**不能隐藏**：iOS 的 window.Orbit.pickFolder() 已实现为
+    //    相册 / 文件选择器（MediaPicker），它是 iOS 导视频的主入口。早期把它一起隐藏是错的。
     var tpFolderBtn = $('tpPickFolder');
     if (tpFolderBtn) tpFolderBtn.style.display = 'none';
     // 4) 脚本播放页「选择脚本文件夹」：iOS 走 MediaPicker 给的是一次性临时文件，
@@ -103,6 +102,15 @@ function iosHideDeadFeatures() {
     if (mrSidebar) mrSidebar.style.display = 'none';
     var mrTile = document.querySelector('.hm-tile[href="/index.html?panel=manualrecord"]');
     if (mrTile) mrTile.style.display = 'none';
+    // 8) 蓝牙连接方式：iOS 侧只保留 WiFi（UDP）一种设备连接方式，
+    //    蓝牙卡片与已选设备区块整体隐藏，避免用户点进「扫描蓝牙设备」却始终连不上。
+    //    ⚠ 只藏卡片不够 —— 若设置里存着 BluetoothSerial，osr.js 的 applyMethod('bt')
+    //    会把 #connBt 重新 display 出来（参数区一片空白，看着像设置页坏了）。
+    //    故 osr.js 的 methodFromConnectionType / applyMethod 在 iOS 下统一收敛回 wifi（双保险）。
+    var btCard = document.querySelector('#connMethods .conn-method[data-method="bt"]');
+    if (btCard) btCard.style.display = 'none';
+    var btSub = $('connBt');
+    if (btSub) btSub.style.display = 'none';
 }
 
 function itemPosterSrc(id) {
@@ -4516,26 +4524,9 @@ function libInitTabs() {
         sb.dataset.bound = '1';
         sb.addEventListener('click', openSmbQuickConfig);
     }
-    // 「＋ 选视频」：直接调原生选择器（iOS 走相册/文件，安卓走 SAF）。
-    // 导入成功后原生会回 __onFolderPicked(Media) → saveLocalRoot + libLoadFolder，列表自动刷新。
-    // 浏览器里没有原生桥，按钮点了没意义，直接藏掉。
-    var av = $('libAddVideo');
-    if (av) {
-        if (window.Orbit && typeof window.Orbit.pickFolder === 'function') {
-            if (av.dataset.bound !== '1') {
-                av.dataset.bound = '1';
-                av.addEventListener('click', function () {
-                    // 防连点：选择器弹出有延迟，连点会叠两个
-                    if (av.disabled) return;
-                    av.disabled = true;
-                    setTimeout(function () { av.disabled = false; }, 1500);
-                    window.Orbit.pickFolder();
-                });
-            }
-        } else {
-            av.style.display = 'none';
-        }
-    }
+    // 说明：tab 栏右侧原有的「＋ 选视频」按钮已移除（与上方四按钮里的「选择视频」功能完全重复，
+    // 两个入口调同一个 window.Orbit.pickFolder，留着只会让用户犹豫点哪个）。
+    // 导入入口统一收敛到「选择视频」（#libBtnFolder）与「设置 → 媒体库」。
 }
 
 function libSwitchTab(which) {
