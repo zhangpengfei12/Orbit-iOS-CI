@@ -21,7 +21,7 @@ enum OsrLink {
 
     static func osrSettings() -> [String: Any] {
         var d = OrbitConfig.shared.dictionary(forKeyPath: "settings.osr")
-        // ⚠ iOS 版只保留 WiFi（UDP）这一种连接方式（v1.1.1 起前端「连接方式」已移除蓝牙卡片）。
+        // ⚠ iOS 版只保留 WiFi（UDP）这一种连接方式（当前版本线已从前端「连接方式」移除蓝牙卡片）。
         //   老配置里若残留 connectionType=BluetoothSerial / btAddress，所有下游判断
         //   （dispatch / status / connect-test / reset）都会走蓝牙分支，用户看到的会是
         //   「未选择蓝牙设备」「蓝牙未连接」这类无法自救的失败。故在此统一收敛为 UDP。

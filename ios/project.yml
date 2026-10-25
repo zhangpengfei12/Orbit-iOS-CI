@@ -14,7 +14,15 @@ settings:
   # 这样 iOS 迭代不会污染安卓的 versionCode / changelog，也不会误触发安卓发版。
   # build 号由 CI 用 git rev-list --count HEAD 自增（TestFlight 只要求单调递增）。
   # ⚠ 升版只改这一处 + web/js/changelog.js 的 current；CI 的版本断言直接从本文件读，不必再改 workflow。
-  MARKETING_VERSION: 1.1.1
+  #
+  # ⚠⚠ 关于 1.1.1 的回退（2026-10-25）：曾把本值升到 1.1.1 并产出 build 78，
+  #    结果是 TestFlight 里多出一个 1.1.1 分组，外部测试员手上仍在 1.0.1 分组里，
+  #    看不到新 build，且 build 的营销版本写进 IPA、上传后无法改挂（ASC 返回
+  #    409 ATTRIBUTE.NOT_ALLOWED）。为让外部测试继续在 1.0.1 版本线滚动更新，
+  #    这里回退为 1.0.1，build 号继续单调递增即可区分新旧。
+  #    结论：iOS 处于 TestFlight 外部测试阶段时，**不要改 MARKETING_VERSION**，
+  #    只用 build 号（CI run_number）推进；等功能验收完成、准备正式上架再升版本线。
+  MARKETING_VERSION: 1.0.1
   SWIFT_VERSION: "5.9"
   TARGETED_DEVICE_FAMILY: "1,2"
 
