@@ -909,11 +909,9 @@
                     <div class="settings-section">
                         <h3>要处理的视频</h3>
                         <p class="panel-desc">选一个视频文件，直接点「开始生成」。脚本默认写在视频同一个文件夹；那个文件夹还没授权写入时会自动存到应用目录，播放时按视频名自动匹配，不用先去授权。</p>
-                        <!-- iOS 降级说明：/api/record/* 整条视频逐帧分析管线在 iOS 上不存在，
-                             面板按钮会被 app.js 的 recApplyPlatformGate() 禁用，这里给出替代路径。 -->
-                        <div class="panel-desc" id="recIosNote" style="display:none;color:#f0a63a">
-                            在播放器里播放没有脚本的<strong>本地</strong>视频（相册 / 文件导入的）时，已经会<strong>自动生成脚本并随播</strong>（音视频混合流合成，与安卓 / 电脑一致），无需任何额外操作即可体验。<br>
-                            本面板（手动挑视频生成）在 iOS 上暂未开放——它走的是另一套逐帧分析接口，尚未移植。替代做法：直接播放视频触发自动随播，或在电脑上生成好 <code>.funscript</code>、用现成脚本站下载，再按<strong>「视频 + 同名 .funscript 一起导入」</strong>的方式导入本应用媒体库，播放时会自动匹配。
+                        <!-- iOS 提示：手动「AI 生成脚本」面板现已可用，与本地视频随播共用同一管线。 -->
+                        <div class="panel-desc" id="recIosNote" style="display:none">
+                            在 iOS 上，请先从「相册」或「文件」把视频导入本应用媒体库，再到这里选它生成；脚本会直接写在媒体库视频旁边，播放时自动匹配。SMB 网络共享视频读不了 smb://，仍不支持生成。
                         </div>
                         <div class="dash-actions">
                             <div class="scan-action-buttons">

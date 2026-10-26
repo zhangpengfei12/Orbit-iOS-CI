@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import AVFoundation
 import Swifter
 
 /// OSR 设备链路端点（真实实现）：bt-status / bt-disconnect / send / reset /
@@ -298,6 +299,73 @@ enum ApiOsr {
             return json(["ok": true])
         }
 
+        // MARK: 手动「AI 生成脚本」面板（/api/record/*）
+        //
+        // 与上面的自动随播共用同一个 FunscriptGenerator 单例（天然互斥：同一时刻只有一个任务），
+        // 差别只是入口与参数来源：这里由用户在面板里挑视频、调参数后显式触发。
+        // 视频 id 是 Documents 相对路径的 base64url（前端 libB64Url(uri)），需要先解码还原。
+
+        // ① 探针：时长 / 分辨率 / 有无音轨（前端 recProbe 展示）。
+        server.post["/api/record/probe"] = { req in
+            guard let body = parseJSON(req) else { return apiError("invalid_json") }
+            guard let rel = Self.decodeRecordId(OsrLink.asStr(body["id"], "")),
+                  let url = mediaURL(rel), FileManager.default.fileExists(atPath: url.path) else {
+                return json(["ok": false, "error": "找不到视频文件"])
+            }
+            let asset = AVAsset(url: url)
+            let dur = CMTimeGetSeconds(asset.duration)
+            var w = 0, h = 0
+            if let vt = asset.tracks(withMediaType: .video).first {
+                let sz = vt.naturalSize
+                w = Int(sz.width); h = Int(sz.height)
+            }
+            let hasAudio = !asset.tracks(withMediaType: .audio).isEmpty
+            let hasVideo = !asset.tracks(withMediaType: .video).isEmpty
+            return json(["ok": true,
+                         "duration": dur.isFinite ? dur : 0,
+                         "width": w, "height": h,
+                         "hasAudio": hasAudio, "hasVideo": hasVideo])
+        }
+
+        // ② 同目录可写自检：iOS 沙盒内视频天生可写（脚本就落同一目录），无需授权。
+        server.post["/api/record/check"] = { _ in
+            json(["ok": true, "writable": true, "fallback": false, "reason": ""])
+        }
+
+        // ③ 投递生成任务：id 解码成 rel，参数来自前端 recReadOptions()。
+        server.post["/api/record/start"] = { req in
+            guard let body = parseJSON(req) else { return apiError("invalid_json") }
+            guard let rel = Self.decodeRecordId(OsrLink.asStr(body["id"], "")), !rel.isEmpty else {
+                return json(["ok": false, "error": "no_id"])
+            }
+            guard let url = mediaURL(rel), FileManager.default.fileExists(atPath: url.path) else {
+                return json(["ok": false, "error": "video_not_found"])
+            }
+            let opt = Self.recordOptions(from: body["options"] as? [String: Any])
+            let (ok, busyId, error) = FunscriptGenerator.shared.start(videoRel: rel, options: opt)
+            if ok { return json(["ok": true]) }
+            if let busy = busyId {
+                return json(["ok": false, "error": "already_running", "busyId": busy])
+            }
+            return json(["ok": false, "error": error ?? "start_failed"])
+        }
+
+        // ④ 进度轮询：与 funscript-gen/status 共用 status()（done 时回填 out/actions/axes/fallback）。
+        server.post["/api/record/status"] = { _ in
+            json(FunscriptGenerator.shared.status())
+        }
+
+        // ⑤ 改存到视频同目录：iOS 生成时已直接写到视频旁边，无需二次搬运，直接回成功。
+        server.post["/api/record/write"] = { _ in
+            json(["ok": true])
+        }
+
+        // ⑥ 取消。
+        server.post["/api/record/cancel"] = { _ in
+            FunscriptGenerator.shared.cancel()
+            return json(["ok": true])
+        }
+
         // 脚本播放页：加载文件夹内所有 .funscript 并合并
         server.post["/api/osr/funscripts"] = { req in
             guard let body = parseJSON(req) else { return apiError("invalid_json") }
@@ -420,6 +488,29 @@ enum ApiOsr {
         if let d = v as? Double { return d }
         if let s = v as? String { return Double(s) ?? def }
         return def
+    }
+
+    /// 解码 /api/record/* 的视频 id：前端对 Documents 相对路径做了 base64url（与视频库一致）。
+    private static func decodeRecordId(_ s: String) -> String? {
+        let t = s.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        let pad = s.count % 4
+        let padded = pad > 0 ? t + String(repeating: "=", count: 4 - pad) : t
+        guard let data = Data(base64Encoded: padded) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// 把前端 recReadOptions() 的字典映射成 RecordOptions（缺省用默认值）。
+    private static func recordOptions(from o: [String: Any]?) -> RecordOptions {
+        guard let o = o else { return RecordOptions() }
+        return RecordOptions(
+            fps: OsrLink.asInt(o["fps"], 10),
+            maxHz: Float(dbl(o["maxHz"], 4)),
+            sensitivity: Float(dbl(o["sensitivity"], 1.8)),
+            smooth: Float(dbl(o["smooth"], 0.25)),
+            minPos: 5, maxPos: 95,
+            offsetMs: OsrLink.asInt(o["offsetMs"], 0),
+            maxSeconds: OsrLink.asInt(o["maxSeconds"], 0)
+        )
     }
 
     /// Documents 根。

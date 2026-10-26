@@ -32,7 +32,8 @@ private struct GenTask {
 
 // MARK: - 生成选项（对齐安卓 RecordOptions 里参与合成的那几个字段）
 
-private struct RecordOptions {
+/// 生成选项：internal（供 ApiOsr 的 /api/record/* 透传前端可调参数）。
+struct RecordOptions {
     var fps: Int = 10
     var maxHz: Float = 4
     var sensitivity: Float = 1.8
@@ -40,6 +41,7 @@ private struct RecordOptions {
     var minPos: Int = 5
     var maxPos: Int = 95
     var offsetMs: Int = 0
+    var maxSeconds: Int = 0   // 0 = 不限制（仍受 30 分钟安全闸约束）
 }
 
 private struct GenAxis {
@@ -63,11 +65,12 @@ final class FunscriptGenerator {
     // MARK: 对外
 
     /// 启动一次生成。已在跑且未取消 → 返回 already_running（busyId = 当前视频 key）。
-    func start(videoRel: String) -> (ok: Bool, busyId: String?, error: String?) {
+    /// options 为 nil 时沿用默认参数（随播链路即用默认；手动面板从 /api/record/start 透传）。
+    func start(videoRel: String, options: RecordOptions? = nil) -> (ok: Bool, busyId: String?, error: String?) {
         lock.lock()
         if let t = task, t.phase == .running, !t.cancelled {
             lock.unlock()
-            return (false, t.videoRel, nil)
+            return (false, t.videoRel, "already_running")
         }
         seq += 1
         let t = GenTask(id: seq, videoRel: videoRel, cancelled: false, percent: 0,
@@ -75,7 +78,8 @@ final class FunscriptGenerator {
         task = t
         lock.unlock()
         Diagnostics.shared.log("GEN", "启动脚本生成：\(videoRel)")
-        queue.async { [weak self] in self?.run(videoRel: videoRel, id: t.id) }
+        let opt = options ?? RecordOptions()
+        queue.async { [weak self] in self?.run(videoRel: videoRel, options: opt, id: t.id) }
         return (true, nil, nil)
     }
 
@@ -86,8 +90,10 @@ final class FunscriptGenerator {
         }
         switch t.phase {
         case .done:
+            let actions = (t.points ?? []).count
             return ["ok": true, "running": false, "phase": "done", "percent": 100,
-                    "duration": t.duration, "points": t.points ?? [], "name": t.outName ?? ""]
+                    "duration": t.duration, "points": t.points ?? [], "name": t.outName ?? "",
+                    "out": t.outName ?? "", "actions": actions, "axes": ["L0"], "fallback": false]
         case .failed:
             return ["ok": false, "running": false, "phase": "failed",
                     "error": t.error ?? "生成失败"]
@@ -133,11 +139,11 @@ final class FunscriptGenerator {
 
     // MARK: 主流程
 
-    private func run(videoRel: String, id: Int) {
+    private func run(videoRel: String, options: RecordOptions, id: Int) {
         guard let videoURL = MediaStore.shared.resolve(videoRel) else {
             fail(id: id, msg: "找不到视频文件"); return
         }
-        let result = generate(videoRel: videoRel, videoURL: videoURL, id: id)
+        let result = generate(videoRel: videoRel, videoURL: videoURL, options: options, id: id)
         switch result {
         case .failure(let e):
             fail(id: id, msg: e.localizedDescription)
@@ -146,15 +152,16 @@ final class FunscriptGenerator {
         }
     }
 
-    private func generate(videoRel: String, videoURL: URL, id: Int)
+    private func generate(videoRel: String, videoURL: URL, options: RecordOptions, id: Int)
         -> Result<(outName: String, duration: Double, points: [[String: Any]]), Error> {
         let asset = AVAsset(url: videoURL)
         let durationSec = CMTimeGetSeconds(asset.duration)
         guard durationSec.isFinite, durationSec > 0 else {
             return .failure(NSError(domain: "Orbit", code: -1, userInfo: [NSLocalizedDescriptionKey: "读不到视频时长，可能不是有效视频文件"]))
         }
-        // 生成上限：最长 30 分钟（长片没必要整段分析，且解码耗时随长度线性增长）。
-        let limitMs = Int64(min(durationSec, 30 * 60) * 1000)
+        // 生成上限：前端可设「只处理前 N 分钟」，否则最长 30 分钟（长片没必要整段分析，解码耗时随长度线性增长）。
+        let capSec = options.maxSeconds > 0 ? min(Double(options.maxSeconds), 1800) : 1800
+        let limitMs = Int64(min(durationSec, capSec) * 1000)
         let hopMs = 50
         let n = max(4, Int(limitMs) / hopMs)
 
@@ -179,7 +186,7 @@ final class FunscriptGenerator {
         // ② 画面运动幅度（与上一帧的 luma 网格差）
         setPct(id: id, 40)
         let motion: [Float]
-        if hasVideo, let m = decodeVideo(asset: asset, limitMs: limitMs, fps: 10, hopMs: hopMs, n: n, id: id) {
+        if hasVideo, let m = decodeVideo(asset: asset, limitMs: limitMs, fps: options.fps, hopMs: hopMs, n: n, id: id) {
             motion = m
         } else {
             motion = [Float](repeating: 0, count: n)
@@ -198,7 +205,7 @@ final class FunscriptGenerator {
 
         // ③ 合成
         setPct(id: id, 90)
-        let opt = RecordOptions(smooth: 0.25, minPos: 5, maxPos: 95)
+        let opt = options
         let res = StrokeSynth.synthesize(audio: aN, motion: mN, hasAudio: hasAudioSig,
                                          hasMotion: hasMotionSig, n: n, hopMs: hopMs, opt: opt)
         guard !res.axes.isEmpty else {

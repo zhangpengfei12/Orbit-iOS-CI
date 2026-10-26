@@ -115,9 +115,9 @@
 
     /* ---------- iOS：隐藏不可用的首页磁贴 ----------
        iOS 沙盒无系统文件夹 / 视频授权，下列功能在 iOS 上残缺或完全不可用，连同首页磁贴一并隐藏：
-         · panel=manualrecord「手工编辑脚本」——「选择视频」已在 app.js 隐藏，页变残缺；
-         · panel=record「AI生成脚本」——手动生成面板走 /api/record/* 逐帧分析接口，iOS 尚未移植（但播放器内「无脚本本地视频」已可自动生成随播）；
+         · panel=manualrecord「手工编辑脚本」——iOS 上仍需在播放器内手动录制，暂未开放；
          · panel=script「脚本播放」——其「选择脚本文件夹」按钮已在 app.js 隐藏，iOS 无对应入口。
+       注：panel=record「AI生成脚本」现已在 iOS 开放（与本地视频随播共用 FunscriptGenerator 管线），不再隐藏。
        home.html 不加载 app.js，须在此单独处理。
        （iPadOS 13+ 的 UA 伪装成 Macintosh，需额外用 ontouchend 判别 touch 设备） */
     (function hideIosDeadTiles() {
@@ -126,7 +126,6 @@
             (/Macintosh/i.test(ua) && 'ontouchend' in document);
         if (!isIOS) return;
         var sel = '.hm-tile[href="/index.html?panel=manualrecord"],' +
-                  '.hm-tile[href="/index.html?panel=record"],' +
                   '.hm-tile[href="/index.html?panel=script"]';
         var tiles = document.querySelectorAll(sel);
         Array.prototype.forEach.call(tiles, function (t) { t.style.display = 'none'; });

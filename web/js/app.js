@@ -75,11 +75,7 @@ function iosHideDeadFeatures() {
     //    任意路径输入无意义，隐藏。
     var mrGroup = $('localRootManualGroup');
     if (mrGroup) mrGroup.style.display = 'none';
-    // 2) AI 生成脚本：整套本地 AI 推理管线未移植 iOS，
-    //    首页卡片隐藏，只留已禁用的说明页入口（用户误入也只会看到「iOS 暂不支持」）。
-    var recTile = $('hmTileRecord');
-    if (recTile) recTile.style.display = 'none';
-    // 3) 手控触板「选择文件夹」：iOS 没有系统文件夹授权，tpPickFolder 点了只会落到不工作的
+    // 2) 手控触板「选择文件夹」：iOS 没有系统文件夹授权，tpPickFolder 点了只会落到不工作的
     //    文件夹页 / 无授权回调，故隐藏。
     //    ⚠ libBtnFolder（视频库「选择视频」）**不能隐藏**：iOS 的 window.Orbit.pickFolder() 已实现为
     //    相册 / 文件选择器（MediaPicker），它是 iOS 导视频的主入口。早期把它一起隐藏是错的。
@@ -3276,9 +3272,7 @@ function initSettings() {
 
     function recStart() {
         if (!recPick) { recHint('请先选一个视频', false); libToast('请先选一个视频'); return; }
-        // iOS 没有视频逐帧分析管线，/api/record/* 全是未实现：
-        // 不拦住的话会一直轮询 status 干等（按钮被禁用时依然可能被程序化触发）。
-        if (orbitIsIOS()) { recHint('iOS 上「选视频播放」已可自动生成随播；此手动面板暂未开放', false); libToast('iOS 上「选视频播放」已可自动生成随播；此手动面板暂未开放'); return; }
+        // iOS 手动「AI 生成脚本」面板现已可用（与本地视频随播共用 FunscriptGenerator 管线），不再拦截。
         recShowProgress(true);
         recSetBar(1, '投递任务…');
         recJobBegin('generate');
@@ -3478,19 +3472,10 @@ function initSettings() {
         recApplyPlatformGate();
     })();
 
-    /** iOS 降级：整条「视频 → 脚本」的逐帧分析管线在 iOS 上不存在（/api/record/* 均未实现），
-        把面板摆成可用只会让人点下去干等。这里直接禁用并给出替代路径：
-        导入现成的 .funscript（与视频同名一起导入媒体库即可）。 */
+    /** iOS：手动「AI 生成脚本」面板现已可用（与本地视频随播共用 FunscriptGenerator 管线）。
+        不再禁用按钮，仅展示一句 iOS 专属提示。 */
     function recApplyPlatformGate() {
         if (!orbitIsIOS()) return;
-        var pick = $('recPickVideo'), st = $('recStart'), gb = $('recGrantBtn');
-        [pick, st, gb].forEach(function (btn) {
-            if (!btn) return;
-            btn.disabled = true;
-            btn.style.opacity = '0.45';
-            btn.style.cursor = 'not-allowed';
-        });
-        recHint('iOS 上「选视频播放」已可自动生成随播；此手动面板暂未开放', false);
         var note = $('recIosNote');
         if (note) note.style.display = '';
     }
