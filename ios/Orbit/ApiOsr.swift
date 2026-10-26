@@ -233,6 +233,20 @@ enum ApiOsr {
             } else {
                 ok = ScriptPlayer.shared.merge(pairs)
             }
+            // iOS 本地脚本生成：本地（Documents/Media）视频且无同名脚本时，允许自动生成；
+            // SMB 共享 / 外部路径读不了 smb://，不支持；已存在同名脚本则直接随播、不生成。
+            let canGen: Bool
+            let genId: String
+            let genReason: String
+            if !pairs.isEmpty {
+                canGen = false; genId = ""; genReason = ""
+            } else if key.isEmpty {
+                canGen = false; genId = ""; genReason = "no_key"
+            } else if let url = ApiOsr.mediaURL(key), FileManager.default.fileExists(atPath: url.path) {
+                canGen = true; genId = key
+            } else {
+                canGen = false; genId = ""; genReason = "smb"
+            }
             var out: [String: Any] = [
                 "ok": ok,
                 "source": ok ? "beside" : "none",
@@ -242,13 +256,46 @@ enum ApiOsr {
                 "folderRoots": [] as [Any],
                 "tried": ["beside=\(pairs.count)"],
                 "duration": ScriptPlayer.shared.durationSec(),
-                // iOS 无视频逐帧分析管线，明确告知前端别发起生成
-                "canGenerate": false,
-                "genId": "",
-                "genReason": "iOS 暂无视频逐帧分析管线，AI 生成脚本不可用",
+                "canGenerate": canGen,
+                "genId": genId,
+                "genReason": genReason,
                 "genBusy": false
             ]
             return json(out)
+        }
+
+        // MARK: 本地视频自动生成脚本（对齐安卓「无脚本视频自动生成随播」）
+        //
+        // 前置：funscript-auto 在「本地 Media 视频且无同名脚本」时回 canGenerate:true + genId(key)；
+        // 前端 startAutoGenerate 拿 genId 投递本 start，再 pollGenStatus 轮询，done 后 applyGenDone
+        // 重发 funscript-auto 即可命中刚落盘的 <视频基名>.funscript → 随播。
+        // 字段严格对齐 player.js 的解析分支（ok / already_running+busyId / error）。
+
+        // ① 投递生成任务：id = 视频 key（Documents 相对路径，与 funscript-auto 的 genId 一致）。
+        server.post["/api/osr/funscript-gen/start"] = { req in
+            guard let body = parseJSON(req) else { return apiError("invalid_json") }
+            let id = OsrLink.asStr(body["id"], "")
+            guard !id.isEmpty else { return json(["ok": false, "error": "no_id"]) }
+            let (ok, busyId, error) = FunscriptGenerator.shared.start(videoRel: id)
+            if ok { return json(["ok": true]) }
+            if let busy = busyId {
+                // already_running：busyId 对得上说明是同一部片（页面重载/重复进入），
+                // 前端 enterRunning 接管进度；对不上则是「AI生成脚本」页手动跑的，别抢。
+                return json(["ok": false, "error": "already_running", "busyId": busy])
+            }
+            return json(["ok": false, "error": error ?? "start_failed"])
+        }
+
+        // ② 进度轮询：前端 pollGenStatus 轻量 {} 与全量 {full:1} 都走这里。
+        // 后端统一回完整形状（含 points / duration），前端拿到 points 就不再补一次全量请求。
+        server.post["/api/osr/funscript-gen/status"] = { _ in
+            json(FunscriptGenerator.shared.status())
+        }
+
+        // ③ 取消：前端现状不会主动调，但要返回 200 + ok:true 兜底（状态机可能用到）。
+        server.post["/api/osr/funscript-gen/cancel"] = { _ in
+            FunscriptGenerator.shared.cancel()
+            return json(["ok": true])
         }
 
         // 脚本播放页：加载文件夹内所有 .funscript 并合并

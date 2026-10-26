@@ -3278,7 +3278,7 @@ function initSettings() {
         if (!recPick) { recHint('请先选一个视频', false); libToast('请先选一个视频'); return; }
         // iOS 没有视频逐帧分析管线，/api/record/* 全是未实现：
         // 不拦住的话会一直轮询 status 干等（按钮被禁用时依然可能被程序化触发）。
-        if (orbitIsIOS()) { recHint('iOS 版暂不支持自动生成脚本', false); libToast('iOS 版暂不支持自动生成脚本'); return; }
+        if (orbitIsIOS()) { recHint('iOS 上「选视频播放」已可自动生成随播；此手动面板暂未开放', false); libToast('iOS 上「选视频播放」已可自动生成随播；此手动面板暂未开放'); return; }
         recShowProgress(true);
         recSetBar(1, '投递任务…');
         recJobBegin('generate');
@@ -3490,7 +3490,7 @@ function initSettings() {
             btn.style.opacity = '0.45';
             btn.style.cursor = 'not-allowed';
         });
-        recHint('iOS 版暂不支持自动生成脚本', false);
+        recHint('iOS 上「选视频播放」已可自动生成随播；此手动面板暂未开放', false);
         var note = $('recIosNote');
         if (note) note.style.display = '';
     }

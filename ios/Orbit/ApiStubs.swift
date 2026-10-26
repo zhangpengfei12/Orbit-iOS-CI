@@ -57,25 +57,6 @@ enum ApiStubs {
                   "implemented": false, "note": "VR 蓝牙时间桥（iOS 暂未实现）"] as [String: Any])
         }
 
-        // ── AI 生成脚本（iOS 暂无视频逐帧分析管线）──
-        // 后处理算法（FunscriptPost）已移植就位，缺的是「解码视频 → 运动分析」这一段。
-        // ⚠ 绝不能返回 ok:true + running:false：player.js 的 startAutoGenerate 一旦拿到
-        //   ok:true 就 enterRunning() → pollGenStatus()，而 status 的 running=false 且
-        //   phase 不是 'done' 会直接判成「生成脚本失败（未知原因）」，胶囊上挂着一句假失败。
-        //   正确做法是 start 明确失败（ok:false + error），让前端走 fail 文案而不是假进度。
-        //   （正常路径根本不会到这里：funscript-auto 已返回 canGenerate=false。）
-        // ⚠ status 是 POST（前端用 postJson 带 {full:1}），不是 GET。
-        server.post["/api/osr/funscript-gen/start"] = { _ in
-            json(["ok": false, "error": "ios_unsupported", "running": false,
-                  "note": "iOS 暂无视频逐帧分析管线，无法生成脚本"] as [String: Any])
-        }
-        for m in ["/api/osr/funscript-gen/cancel", "/api/osr/funscript-gen/status"] {
-            server.post[m] = { _ in
-                json(["ok": false, "error": "ios_unsupported", "running": false,
-                      "note": "iOS 暂无视频逐帧分析管线，无法生成脚本"] as [String: Any])
-            }
-        }
-
         // ── AI 生成脚本的面板入口（/api/record/*；iOS 无视频逐帧分析管线）──
         // ⚠⚠ 绝不能返回 ok:true：recStart() 一见 ok:true 就 recSetBusy('生成中…') 并起轮询，
         //    而 status 恒 running=false → 进度条永远停在「投递任务…」，用户只看到干等。

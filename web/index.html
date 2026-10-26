@@ -912,8 +912,8 @@
                         <!-- iOS 降级说明：/api/record/* 整条视频逐帧分析管线在 iOS 上不存在，
                              面板按钮会被 app.js 的 recApplyPlatformGate() 禁用，这里给出替代路径。 -->
                         <div class="panel-desc" id="recIosNote" style="display:none;color:#f0a63a">
-                            iOS 版暂不支持「从视频自动生成脚本」——这条链路需要解码整段视频做逐帧运动分析，iOS 端暂时还没有对应的处理管线。<br>
-                            替代做法：在电脑上生成好 <code>.funscript</code>，或用现成的脚本站下载，再按<strong>「视频 + 同名 .funscript 一起导入」</strong>的方式导入本应用媒体库，播放时会自动匹配。导入步骤见上面的「本机视频目录」。
+                            在播放器里播放没有脚本的<strong>本地</strong>视频（相册 / 文件导入的）时，已经会<strong>自动生成脚本并随播</strong>（音视频混合流合成，与安卓 / 电脑一致），无需任何额外操作即可体验。<br>
+                            本面板（手动挑视频生成）在 iOS 上暂未开放——它走的是另一套逐帧分析接口，尚未移植。替代做法：直接播放视频触发自动随播，或在电脑上生成好 <code>.funscript</code>、用现成脚本站下载，再按<strong>「视频 + 同名 .funscript 一起导入」</strong>的方式导入本应用媒体库，播放时会自动匹配。
                         </div>
                         <div class="dash-actions">
                             <div class="scan-action-buttons">
@@ -1217,7 +1217,7 @@
                             <p class="hm-help-p">在「脚本播放」页选择已加载的 <code>.funscript</code> 脚本，可预览轴轨迹（可视化曲线）并播放，支持多轴同步，配合影片时间轴精准跟随。</p>
                             <p class="hm-help-p">多轴脚本的文件命名：<strong>主脚本</strong>与视频同名，另加后缀 <code>.&lt;轴&gt;.funscript</code>，轴名可取 <code>L0/L1/L2</code>（上下、左右、翻滚）与 <code>R0/R1/R2</code>（旋转、俯仰、翻滚）。多个轴文件放在视频同目录即可自动识别。</p>
                             <div class="hm-help-h">六、AI生成脚本</div>
-                            <p class="hm-help-p">影片没有脚本时，可以用「AI生成脚本」自己生成一份。点「选择视频」挑一个视频，调好参数后点「开始生成」即可，<strong>不需要先授权文件夹</strong>。</p>
+                            <p class="hm-help-p">影片没有脚本时，可以用「AI生成脚本」自己生成一份。点「选择视频」挑一个视频，调好参数后点「开始生成」即可，<strong>不需要先授权文件夹</strong>。另外，在播放器里直接播放没有脚本的<strong>本地</strong>视频时，也会自动触发本地生成并随播（从相册或文件选视频播放即走这条路），与手动生成效果一致。</p>
                             <p class="hm-help-p">默认参数已经把<strong>动作幅度</strong>调得比较大（强度灵敏度 1.8×、平滑 25%），要更柔可以直接把「强度灵敏度」往下拖；脚本优先写在视频同一个文件夹；那个文件夹还没授权写入时，会自动存到<strong>应用私有目录</strong>，播放时按视频名自动匹配，功能完全一样。如果你希望 <code>.funscript</code> 就落在视频旁边，点「授权保存到视频旁」一次即可，之后同目录不再问。</p>
                             <p class="hm-help-p">生成用的是<strong>音视频混合流</strong>：画面运动决定<strong>什么时候动、往哪个方向动</strong>，音频的低频能量决定<strong>这一下使多大劲</strong>，再把它们合成一串有起有落的往返动作。三个最常调的参数：<strong>笔触频率上限</strong>（设备跟不上的高频往复要压掉，一般 3–5 Hz）、<strong>强度灵敏度</strong>（整体行程大小）、<strong>平滑强度</strong>（相邻笔触的力度是否均匀）。若感觉画面已经动了设备才动，把<strong>设备延迟补偿</strong>往正方向调。</p>
                             <p class="hm-help-p">生成结果会缓存：若当时没授权，可先生成再补授权，随后用「改存到视频旁」一键落盘，不必重跑分析。</p>
