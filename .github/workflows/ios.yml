@@ -375,7 +375,9 @@ jobs:
           if ! $PB -c "Print :NSAppTransportSecurity:NSAllowsLocalNetworking" "$APP/Info.plist" >/dev/null 2>&1; then
             $PB -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$APP/Info.plist"
           fi
-          add_str NSBluetoothAlwaysUsageDescription "用于连接并控制已配对的硬件设备"
+          # iOS 已彻底移除蓝牙连接方式：不再注入 NSBluetoothAlwaysUsageDescription。
+          # ⚠ 源 ios/Orbit/Info.plist 删了它并不够 —— Xcode 26 忽略源 plist，
+          #   全靠本段注入；漏删这一行会让产物仍声明蓝牙权限（撤销权限形同虚设）。
           add_str NSLocalNetworkUsageDescription "用于通过局域网连接设备，以及访问局域网内的媒体共享"
           add_bool UIFileSharingEnabled true
           add_bool UIViewControllerBasedStatusBarAppearance true
@@ -433,7 +435,7 @@ jobs:
           BN="${GITHUB_RUN_NUMBER:-1}"
           $PB -c "Set :CFBundleVersion $BN" "$APP/Info.plist" 2>/dev/null || $PB -c "Add :CFBundleVersion string $BN" "$APP/Info.plist"
           echo "=== 注入后产物 Info.plist 关键键 ==="
-          plutil -p "$APP/Info.plist" 2>/dev/null | grep -E "UISupportedInterfaceOrientations|UILaunchScreen|NSBluetoothAlwaysUsageDescription|CFBundleDisplayName|UIUserInterfaceStyle|NSAppTransportSecurity|CFBundleVersion|NSPhotoLibraryUsageDescription|CFBundleDocumentTypes|UTImportedTypeDeclarations|NSMotionUsageDescription|UIBackgroundModes|LSSupportsOpeningDocumentsInPlace"
+          plutil -p "$APP/Info.plist" 2>/dev/null | grep -E "UISupportedInterfaceOrientations|UILaunchScreen|CFBundleDisplayName|UIUserInterfaceStyle|NSAppTransportSecurity|CFBundleVersion|NSPhotoLibraryUsageDescription|CFBundleDocumentTypes|UTImportedTypeDeclarations|NSMotionUsageDescription|UIBackgroundModes|LSSupportsOpeningDocumentsInPlace"
 
           # 硬校验：关键键必须真的进包。build 74 就是「只在源 plist 里加了键、产物里没有」，
           # 而流程一路绿到底，直到用户反馈「分享面板里找不到 App」才暴露。缺任何一个直接失败。
@@ -462,7 +464,7 @@ jobs:
           echo ""
           echo "=== 断言：产物必须含自定义键（否则 Apple 会拒）==="
           fail=0
-          for k in UISupportedInterfaceOrientations UILaunchScreen NSBluetoothAlwaysUsageDescription CFBundleDisplayName; do
+          for k in UISupportedInterfaceOrientations UILaunchScreen CFBundleDisplayName; do
             if ! plutil -p "$APP/Info.plist" 2>/dev/null | grep -q "$k"; then
               echo "!! 缺失关键键: $k"; fail=1
             else

@@ -405,12 +405,14 @@ private enum StrokeSynth {
         // ② 起始点（时机）：音频 novelty 为主，运动 novelty 补齐
         var bounds: [Int] = [0]
         let audioNov = SignalAnalysis.novelty(aN, win: max(1, 250 / hopMs))
-        for p in SignalAnalysis.pickPeaks(audioNov, thr: SignalAnalysis.threshold(audioNov, 0.30), minGap: minGap)
+        // ⚠ threshold 第二个参数带标签 k:（std 倍数），漏写会被 Swift 判
+        //   "missing argument label 'k:' in call"，整包编译失败（build 80/81/82 皆挂在此）。
+        for p in SignalAnalysis.pickPeaks(audioNov, thr: SignalAnalysis.threshold(audioNov, k: 0.30), minGap: minGap)
             where p > 0 { bounds.append(p) }
         if hasMotion {
             let visNov = SignalAnalysis.novelty(mN, win: max(1, 350 / hopMs))
             let visGap = max(minGap, Int(round(Float(1000) / (opt.maxHz * 0.55) / Float(hopMs))))
-            for p in SignalAnalysis.pickPeaks(visNov, thr: SignalAnalysis.threshold(visNov, 0.34), minGap: visGap) {
+            for p in SignalAnalysis.pickPeaks(visNov, thr: SignalAnalysis.threshold(visNov, k: 0.34), minGap: visGap) {
                 if p > 0 && !bounds.contains(where: { abs($0 - p) < minGap }) { bounds.append(p) }
             }
         }
