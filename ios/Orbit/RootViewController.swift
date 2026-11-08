@@ -92,7 +92,7 @@ final class RootViewController: UIViewController {
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
-        // 原生 → JS 出口：服务器端点线程（BtLink 回调等）也经这里回传前端
+        // 原生 → JS 出口：服务器端点线程（设备链路回调等）也经这里回传前端
         JsEmit.sink = { [weak self] js in
             guard let self else { return }
             if Thread.isMainThread { self.emit(js) }

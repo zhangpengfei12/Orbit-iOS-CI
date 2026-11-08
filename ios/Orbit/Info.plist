@@ -25,8 +25,6 @@
 	     用户看到的就是「选了视频但什么都没发生」。必须声明。 -->
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>用于从相册选择视频导入 App 媒体库播放（仅读取您主动选中的视频）</string>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>用于连接并控制已配对的硬件设备</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>用于通过局域网连接设备，以及访问局域网内的媒体共享</string>
 	<!-- 手控触板的「陀螺仪 / 摇一摇」模式用 CoreMotion 取姿态与线性加速度。

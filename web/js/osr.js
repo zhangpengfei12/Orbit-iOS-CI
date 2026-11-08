@@ -176,6 +176,7 @@
     var btAutoTried = false;
     var btAutoConnecting = false;
     function scheduleBtAutoConnect() {
+        if (osrIsIOS()) return;          // iOS 已移除蓝牙连接方式，无需自动重连
         if (btAutoTried) return;
         if (currentMethod !== 'bt' || !btSelected) return;
         if (typeof window.Orbit === 'undefined'
@@ -301,6 +302,11 @@
         // 否则 #connBt 会被重新 display 出来，而它的入口卡片已被 app.js 的 iosHideDeadFeatures 藏掉。
         if (method === 'bt' && osrIsIOS()) method = 'wifi';
         currentMethod = method;
+        // iOS 彻底移除蓝牙连接方式：隐藏「连接方式」里的蓝牙卡片，只留 WiFi。
+        if (osrIsIOS()) {
+            var btCard = document.querySelector('#connMethods .conn-method[data-method="bt"]');
+            if (btCard) btCard.style.display = 'none';
+        }
         var cards = document.querySelectorAll('#connMethods .conn-method');
         Array.prototype.forEach.call(cards, function (c) {
             c.classList.toggle('active', c.getAttribute('data-method') === method);
@@ -629,6 +635,7 @@
     }
 
     function refreshBtStatus() {
+        if (osrIsIOS()) return;          // iOS 已移除蓝牙连接方式，无需查询蓝牙状态
         get('/api/osr/bt-status').then(function (r) {
             if (!r || r.error) return;
             if (r.connected) { btConnectedAddr = r.address; btConnectedKind = r.kind || 'ble'; }

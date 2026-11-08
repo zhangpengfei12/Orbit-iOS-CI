@@ -138,9 +138,8 @@ enum OrbitMethod: String, CaseIterable {
     // Orbit
     case pickFolder, isDebug, pickVideo, pickVideoManualRec, grantRecordFolder
     case startTilt, stopTilt, hasTilt
-    case requestBluetoothPermission, hasBluetoothPermission, openBluetoothSettings, openAppSettings
-    case openSettings, startBluetoothScan, stopBluetoothScan
-    case connectBluetooth, disconnectBluetooth
+    case openAppSettings
+    case openSettings
     case openDeviceConfig, openWeb, openExternal, openVideoExternal
     case backgroundStatus, checkAppUpdate, downloadAndInstallApk, requestIgnoreBattery
     // OrbitPlayer
