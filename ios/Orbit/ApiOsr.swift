@@ -223,7 +223,9 @@ enum ApiOsr {
             } else if key.isEmpty {
                 canGen = false; genId = ""; genReason = "no_key"
             } else if let url = ApiOsr.mediaURL(key), FileManager.default.fileExists(atPath: url.path) {
-                canGen = true; genId = key
+                // ⚠ 三常量必须在**每条**分支都赋值：Swift 的 let 只要有一条路径未初始化，
+                //   就会报 "used before being initialized"，整包编译失败（run#83 挂在此）。
+                canGen = true; genId = key; genReason = ""
             } else {
                 canGen = false; genId = ""; genReason = "smb"
             }
