@@ -3,12 +3,21 @@ import Network
 import AVFoundation
 import Swifter
 
-/// OSR 设备链路端点（真实实现）：send / reset / connect-test / status /
-/// settings（合并写）。iOS 版仅 WiFi（UDP）一种连接方式，蓝牙链路已移除。
+/// OSR 设备链路端点（真实实现）：bt-status / bt-disconnect / send / reset /
+/// connect-test / status / settings（合并写）。
 /// 在 ApiRouter 里注册在 ApiSettings / ApiStubs 之后，同名路径覆盖占位实现。
 enum ApiOsr {
 
     static func register(into server: HttpServer) {
+
+        // ── 蓝牙状态：前端轮询 + 开机自动重连判断 ──
+        server.get["/api/osr/bt-status"] = { _ in
+            json(BtLink.shared.statusDict())
+        }
+        server.post["/api/osr/bt-disconnect"] = { _ in
+            BtLink.shared.disconnect()
+            return json(BtLink.shared.statusDict())
+        }
 
         // ── 手动发送：{axis,pos,durationMs} 或 {axes:[{axis,pos}],durationMs} ──
         // 回显 payload 供触板排查（对齐安卓 WebServer.kt 的 send 分支）。
@@ -47,7 +56,9 @@ enum ApiOsr {
             let full = ctx.prefix + cmd + ctx.suffix
             let r = OsrLink.dispatch(full)
             let d = OsrLink.osrSettings()
-            let tgt = "\(OsrLink.asStr(d["ip"], "192.168.1.88")):\(OsrLink.asInt(d["port"], 8000))"
+            let tgt = (OsrLink.asStr(d["connectionType"], "UDP") == "BluetoothSerial")
+                ? "bt:\(OsrLink.asStr(d["btAddress"], ""))"
+                : "\(OsrLink.asStr(d["ip"], "192.168.1.88")):\(OsrLink.asInt(d["port"], 8000))"
             Diagnostics.shared.log("OSR", "reset target=\(tgt) delivered=\(r.ok) detail=\(r.detail)")
             return json(["ok": true, "delivered": r.ok, "detail": r.detail])
         }
@@ -58,10 +69,15 @@ enum ApiOsr {
         //   tcp    —— 对同一地址的 TCP 探测，作可达性参考
         server.post["/api/osr/connect-test"] = { _ in
             let d = OsrLink.osrSettings()
+            let type = OsrLink.asStr(d["connectionType"], "UDP")
             let ctx = OsrLink.cmdContext()
             let cmd = buildTestCommand(ctx)
             let full = ctx.prefix + cmd + ctx.suffix
             let r = OsrLink.dispatch(full)
+            if type == "BluetoothSerial" {
+                return json(["ok": r.ok, "detail": r.detail,
+                             "target": "蓝牙 \(OsrLink.asStr(d["btAddress"], ""))"])
+            }
             let host = OsrLink.asStr(d["ip"], "192.168.1.88")
             let port = OsrLink.asInt(d["port"], 8000)
             let tcp = Self.tcpProbe(host: host, port: port)
@@ -78,7 +94,12 @@ enum ApiOsr {
         server.get["/api/osr/status"] = { _ in
             let d = OsrLink.osrSettings()
             let type = OsrLink.asStr(d["connectionType"], "UDP")
-            let linkState = OsrLink.udpLinkState()
+            let linkState: String
+            if type == "BluetoothSerial" {
+                linkState = BtLink.shared.isConnected ? "connected" : "disconnected"
+            } else {
+                linkState = OsrLink.udpLinkState()
+            }
             return json([
                 "ok": true,
                 "connectionType": type,

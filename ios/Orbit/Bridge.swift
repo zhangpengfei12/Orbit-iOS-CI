@@ -138,8 +138,9 @@ enum OrbitMethod: String, CaseIterable {
     // Orbit
     case pickFolder, isDebug, pickVideo, pickVideoManualRec, grantRecordFolder
     case startTilt, stopTilt, hasTilt
-    case openAppSettings
-    case openSettings
+    case requestBluetoothPermission, hasBluetoothPermission, openBluetoothSettings, openAppSettings
+    case openSettings, startBluetoothScan, stopBluetoothScan
+    case connectBluetooth, disconnectBluetooth
     case openDeviceConfig, openWeb, openExternal, openVideoExternal
     case backgroundStatus, checkAppUpdate, downloadAndInstallApk, requestIgnoreBattery
     // OrbitPlayer
@@ -181,10 +182,12 @@ func bridgeInjectionScript() -> String {
       function makeBridge(kind, dead){
         var target = {};
         // iOS 的 messageHandlers 桥无法同步返回值；前端对这几个方法要求同步 bool。
-        // isDebug 恒 false。蓝牙权限存根已随「移除蓝牙连接方式」删除：iOS 端
-        // 不再有 CBCentralManager / 蓝牙卡片 / 扫描流程，无需再预定义
-        // hasBluetoothPermission（Proxy 兜底会返回函数，但该路径已不可达）。
+        // 固定语义：蓝牙权限检查恒 true（真实授权流程由原生回调 __onBluetoothPermission
+        // 驱动，iOS 首次创建 CBCentralManager 自动弹授权框），isDebug 恒 false。
+        // 不预定义的话 hasBluetoothPermission() 返回 undefined → 前端永远停在
+        // 「需要蓝牙权限」分支，扫描根本发不起来。
         if (kind === 'orbit') {
+          target.hasBluetoothPermission = function(){ return true; };
           target.isDebug = function(){ return false; };
           // iOS 没有「电池优化白名单 / 前台服务 / 唤醒锁」这套东西，后台由系统统一调度。
           // 必须预定义成同步返回字符串：Proxy 的兜底分支是「任何属性都返回函数，调用返回

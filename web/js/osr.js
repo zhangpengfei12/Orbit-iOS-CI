@@ -176,7 +176,6 @@
     var btAutoTried = false;
     var btAutoConnecting = false;
     function scheduleBtAutoConnect() {
-        if (osrIsIOS()) return;          // iOS 已移除蓝牙连接方式，无需自动重连
         if (btAutoTried) return;
         if (currentMethod !== 'bt' || !btSelected) return;
         if (typeof window.Orbit === 'undefined'
@@ -282,10 +281,9 @@
 
     /* ---------- 连接方式：先选方式，再按方式输入参数 ---------- */
     function methodFromConnectionType(t) {
-        // ⚠ iOS 版没有 USB / 串口卡片，也**已移除蓝牙连接方式**（页面里只留 WiFi 一张卡），
-        //   若旧配置里存着 'Serial' / 'BluetoothSerial' 直接沿用会走到被隐藏的分支：
-        //   卡片区一片空白、参数区也不显示，看起来像「设置页坏了」。这里统一收敛回 WiFi。
-        if (t === 'BluetoothSerial') return osrIsIOS() ? 'wifi' : 'bt';
+        // iOS 版没有 USB / 串口卡片，但蓝牙（BLE）已可用；旧配置里的
+        // BluetoothSerial 要正确落回 bt 卡片，否则选了蓝牙却显示 WiFi 参数区。
+        if (t === 'BluetoothSerial') return 'bt';
         return 'wifi'; // UDP
     }
 
@@ -298,15 +296,7 @@
     }
 
     function applyMethod(method) {
-        // iOS 只保留 WiFi：任何走到这里的 'bt'（旧设置、其它入口的残留调用）都收敛回 wifi，
-        // 否则 #connBt 会被重新 display 出来，而它的入口卡片已被 app.js 的 iosHideDeadFeatures 藏掉。
-        if (method === 'bt' && osrIsIOS()) method = 'wifi';
         currentMethod = method;
-        // iOS 彻底移除蓝牙连接方式：隐藏「连接方式」里的蓝牙卡片，只留 WiFi。
-        if (osrIsIOS()) {
-            var btCard = document.querySelector('#connMethods .conn-method[data-method="bt"]');
-            if (btCard) btCard.style.display = 'none';
-        }
         var cards = document.querySelectorAll('#connMethods .conn-method');
         Array.prototype.forEach.call(cards, function (c) {
             c.classList.toggle('active', c.getAttribute('data-method') === method);
@@ -635,7 +625,6 @@
     }
 
     function refreshBtStatus() {
-        if (osrIsIOS()) return;          // iOS 已移除蓝牙连接方式，无需查询蓝牙状态
         get('/api/osr/bt-status').then(function (r) {
             if (!r || r.error) return;
             if (r.connected) { btConnectedAddr = r.address; btConnectedKind = r.kind || 'ble'; }

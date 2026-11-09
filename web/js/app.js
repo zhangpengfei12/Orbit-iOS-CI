@@ -98,15 +98,8 @@ function iosHideDeadFeatures() {
     if (mrSidebar) mrSidebar.style.display = 'none';
     var mrTile = document.querySelector('.hm-tile[href="/index.html?panel=manualrecord"]');
     if (mrTile) mrTile.style.display = 'none';
-    // 8) 蓝牙连接方式：iOS 侧只保留 WiFi（UDP）一种设备连接方式，
-    //    蓝牙卡片与已选设备区块整体隐藏，避免用户点进「扫描蓝牙设备」却始终连不上。
-    //    ⚠ 只藏卡片不够 —— 若设置里存着 BluetoothSerial，osr.js 的 applyMethod('bt')
-    //    会把 #connBt 重新 display 出来（参数区一片空白，看着像设置页坏了）。
-    //    故 osr.js 的 methodFromConnectionType / applyMethod 在 iOS 下统一收敛回 wifi（双保险）。
-    var btCard = document.querySelector('#connMethods .conn-method[data-method="bt"]');
-    if (btCard) btCard.style.display = 'none';
-    var btSub = $('connBt');
-    if (btSub) btSub.style.display = 'none';
+    // 8) 蓝牙连接方式在 iOS 上已可用（BLE）：卡片由 osr.js 的 applyMethod 正常显隐，
+    //    这里不再隐藏，否则用户点「蓝牙」会看不到入口卡片。
 }
 
 function itemPosterSrc(id) {

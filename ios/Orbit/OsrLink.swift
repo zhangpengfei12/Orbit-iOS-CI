@@ -4,8 +4,9 @@ import UIKit
 
 // MARK: - OSR 指令下发链路（对齐安卓 OsrConnections.dispatch）
 //
-// iOS 版仅保留 WiFi（UDP）一种连接方式：NWConnection，地址/端口来自 settings.osr 的 ip/port。
-// 蓝牙（BLE）/ USB 数据线均已移除。
+// 连接方式二选一（iOS 版已移除 USB 数据线）：
+//   UDP（WiFi）  —— NWConnection，地址/端口来自 settings.osr 的 ip/port
+//   蓝牙（BLE） —— BtLink.write，地址来自 settings.osr 的 btAddress
 // TCode 指令组装复用 TCode.swift 纯函数（对齐安卓 OsrManager.sendManual）。
 enum OsrLink {
 
@@ -19,15 +20,10 @@ enum OsrLink {
     private static var lastUdpError: String?
 
     static func osrSettings() -> [String: Any] {
-        var d = OrbitConfig.shared.dictionary(forKeyPath: "settings.osr")
-        // ⚠ iOS 版只保留 WiFi（UDP）这一种连接方式，蓝牙链路已从原生侧移除。
-        //   老配置里若残留 connectionType=BluetoothSerial / btAddress，统一收敛为 UDP，
-        //   避免下游判断误入已不存在的蓝牙分支。
-        if asStr(d["connectionType"], "UDP") == "BluetoothSerial" {
-            d["connectionType"] = "UDP"
-            d["btAddress"] = ""
-        }
-        return d
+        // 两种连接方式由用户选择：WiFi（UDP）或蓝牙（BLE）。
+        // ⚠ 绝不能把 BluetoothSerial 强制收敛回 UDP——那会让设置里选了蓝牙，
+        //   dispatch / status / connect-test / reset 仍走 UDP，蓝牙永远连不上。
+        return OrbitConfig.shared.dictionary(forKeyPath: "settings.osr")
     }
 
     /// 从 settings.osr 组装 CmdContext（对齐安卓 OsrSettings.toCmdContext）。
@@ -77,7 +73,16 @@ enum OsrLink {
     @discardableResult
     static func dispatch(_ payload: String) -> (ok: Bool, detail: String) {
         let d = osrSettings()
-        // iOS 仅 WiFi（UDP）：osrSettings 已把遗留蓝牙配置收敛为 UDP，故无需再判蓝牙分支。
+        let type = asStr(d["connectionType"], "UDP")
+        if type == "BluetoothSerial" {
+            let addr = asStr(d["btAddress"], "")
+            guard !addr.isEmpty else { return (false, "未选择蓝牙设备") }
+            guard BtLink.shared.isConnected else { return (false, "蓝牙未连接，请先在设置 → 设备里连接") }
+            return BtLink.shared.write(payload)
+                ? (true, "蓝牙已发送")
+                : (false, "蓝牙发送失败：\(BtLink.shared.lastError ?? "未知原因")")
+        }
+        // 其余（UDP / 遗留 TCP 字段）一律按 UDP 处理 —— 前端已固定 UDP
         let host = asStr(d["ip"], "192.168.1.88")
         let port = asInt(d["port"], 8000)
         return sendUdp(host: host, port: port, payload: payload)
@@ -212,6 +217,22 @@ enum NativeBridge {
         }
         let a = call.args
         switch call.method {
+        case "startBluetoothScan":
+            BtLink.shared.startScan()
+        case "stopBluetoothScan":
+            BtLink.shared.stopScan()
+        case "connectBluetooth":
+            BtLink.shared.connect(a.count > 0 ? (a[0].asString ?? "") : "",
+                                  a.count > 1 ? (a[1].asString ?? "ble") : "ble",
+                                  a.count > 2 ? (a[2].asString ?? "") : "")
+        case "disconnectBluetooth":
+            BtLink.shared.disconnect()
+        case "requestBluetoothPermission":
+            // iOS 无法编程再次弹授权框：跳到本 App 的系统设置页手动开
+            openAppSettings()
+        case "openBluetoothSettings":
+            // iOS 没有「蓝牙设置」直达入口，同样跳 App 设置
+            openAppSettings()
         case "openAppSettings":
             openAppSettings()
 
