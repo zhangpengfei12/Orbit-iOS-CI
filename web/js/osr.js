@@ -53,6 +53,8 @@
     var btConnectingKind = null;
     var btConnectedAddr = null;   // 当前已连接地址（来自原生回调/状态查询）
     var btConnectedKind = null;
+    var BT_TARGET_QUERY = 'TCODE';   // iOS 打开设备页时的默认搜索词
+    var btSearchTouched = false;     // 用户是否手动改过搜索词
 
     /** 已提示过的发送失败原因，避免自动模式轮询时反复弹同一条。 */
     var lastShownSendError = null;
@@ -416,6 +418,15 @@
 
     function btKey(d) { return (d.kind || 'ble') + ':' + d.address; }
 
+    /** 前端兜底识别：原生已按 service UUID 打标；安卓 / 旧桥无该字段时按名字与服务兜底。 */
+    function btIsOrbit(dev) {
+        if (dev.orbit) return true;
+        var svc = (dev.services || []).join(' ').toLowerCase();
+        if (svc.indexOf('ff1b451d') >= 0 || svc.indexOf('fff0') >= 0 || svc.indexOf('ffe0') >= 0) return true;
+        var n = String(dev.name || '').toLowerCase();
+        return n.indexOf('tcode') >= 0 || n.indexOf('orbit') >= 0 || n.indexOf('sr6') >= 0;
+    }
+
     function rssiBarsHtml(rssi) {
         var lvl = Math.max(0, Math.min(5, Math.round((rssi + 100) / 14)));
         var h = '';
@@ -430,9 +441,11 @@
         if (connected) cls += ' connected';
         if (connecting) cls += ' connecting';
         if (d.paired) cls += ' paired';
+        if (d.orbit) cls += ' orbit';
 
         var name = d.name ? escapeHtml(d.name) : 'Unknown';
         var sub = d.kind === 'classic' ? '经典蓝牙' : 'BLE';
+        if (!d.name) sub += ' · ' + escapeHtml(String(d.address || '').slice(0, 8));
 
         var right;
         if (connecting) right = '<span class="bt-dev-state">连接中…</span>';
@@ -449,29 +462,87 @@
             ' data-kind="' + escapeHtml(d.kind || 'ble') + '"' +
             ' data-name="' + escapeHtml(d.name || '') + '">' +
             '<span class="bt-dev-ico">' + BT_ICON + '</span>' +
-            '<span class="bt-dev-main"><span class="bt-dev-name">' + name + '</span>' +
+            '<span class="bt-dev-main"><span class="bt-dev-name">' + name +
+            (d.orbit ? '<span class="bt-orbit-tag">Orbit 设备</span>' : '') + '</span>' +
             '<span class="bt-dev-sub">' + sub + (d.paired ? ' · 已配对' : '') + '</span></span>' +
             right + '</div>';
+    }
+
+    function btSearchValue() {
+        var el = $('btDevSearch');
+        return el ? String(el.value || '').trim() : '';
+    }
+
+    function btMatchQuery(d, q) {
+        if (!q) return true;
+        var hay = [d.name || '', d.address || '', (d.services || []).join(' ')].join(' ').toLowerCase();
+        return hay.indexOf(q.toLowerCase()) >= 0;
+    }
+
+    function btOrbitDevices() {
+        return Object.keys(btDevMap).map(function (k) { return btDevMap[k]; })
+            .filter(function (d) { return !!d.orbit; })
+            .sort(function (a, b) {
+                return ((typeof b.rssi === 'number') ? b.rssi : -999) -
+                       ((typeof a.rssi === 'number') ? a.rssi : -999);
+            });
+    }
+
+    /** 顶部一键连接卡片：即使搜索词把列表过滤空了，也能直接连自己的设备。 */
+    function renderBtOrbitCard(orbits) {
+        var card = $('btOrbitCard');
+        if (!card) return;
+        if (!orbits.length) { card.style.display = 'none'; card.innerHTML = ''; return; }
+        var best = orbits[0];
+        var connected = (btConnectedAddr === best.address);
+        var nm = best.name || 'TCODE-ESP32';
+        card.style.display = 'flex';
+        card.innerHTML = '<span class="bt-orbit-ico">' + BT_ICON + '</span>' +
+            '<span class="bt-orbit-main"><span class="bt-orbit-title">' +
+            (connected ? 'Orbit 设备已连接' : '检测到 Orbit 设备') + '</span>' +
+            '<span class="bt-orbit-sub">' + escapeHtml(nm) + ' · 信号 ' +
+            (typeof best.rssi === 'number' ? best.rssi : '-') + ' dBm' +
+            (orbits.length > 1 ? ' · 共 ' + orbits.length + ' 台' : '') + '</span></span>' +
+            '<button type="button" class="bt-orbit-go" id="btOrbitGo">' +
+            (connected ? '已连接' : '连接') + '</button>';
+        var go = $('btOrbitGo');
+        if (go) go.addEventListener('click', function (ev) {
+            ev.stopPropagation();
+            if (!connected) connectBtDevice(best.address, best.kind || 'ble', nm);
+        });
     }
 
     function renderBtDevList() {
         var box = $('btDevList');
         if (!box) return;
         var all = Object.keys(btDevMap).map(function (k) { return btDevMap[k]; });
-        if (!all.length) {
-            box.innerHTML = '<div class="device-empty">' +
-                (btScanning ? '正在扫描附近的蓝牙设备…' : '未发现蓝牙设备，点右上角重新扫描。') + '</div>';
-            return;
-        }
-        all.sort(function (a, b) {
+        renderBtOrbitCard(btOrbitDevices());
+        var q = btSearchValue();
+        var shown = all.filter(function (d) { return btMatchQuery(d, q); });
+        shown.sort(function (a, b) {
+            var ao = a.orbit ? 0 : 1, bo = b.orbit ? 0 : 1;
+            if (ao !== bo) return ao - bo;                       // Orbit 设备置顶
             var an = a.name ? 0 : 1, bn = b.name ? 0 : 1;
             if (an !== bn) return an - bn;                       // 有名字的排前面
             var ar = (typeof a.rssi === 'number') ? a.rssi : -999;
             var br = (typeof b.rssi === 'number') ? b.rssi : -999;
             return br - ar;                                      // 信号强的排前面
         });
+        if (!shown.length) {
+            var empty;
+            if (!all.length) {
+                empty = btScanning ? '正在扫描附近的蓝牙设备…' : '未发现蓝牙设备，点右上角重新扫描。';
+            } else if (q) {
+                empty = '没有匹配「' + escapeHtml(q) + '」的设备（共扫描到 ' + all.length +
+                    ' 台）。点「显示全部」查看全部设备；刚刷完固件请断电重插，并在配置页确认「BLE enabled」已开启。';
+            } else {
+                empty = '未发现蓝牙设备，点右上角重新扫描。';
+            }
+            box.innerHTML = '<div class="device-empty">' + empty + '</div>';
+            return;
+        }
         var html = '';
-        all.forEach(function (d) { html += btDevItemHtml(d); });
+        shown.forEach(function (d) { html += btDevItemHtml(d); });
         box.innerHTML = html;
         Array.prototype.forEach.call(box.querySelectorAll('.bt-dev-item'), function (it) {
             it.addEventListener('click', function () {
@@ -506,6 +577,11 @@
         btDevMap = {};
         btConnectingAddr = null;
         btConnectingKind = null;
+        // iOS 默认只显示 Orbit 设备（固件广播常不带名字，靠服务 UUID 识别后规范化显示名）；
+        // 安卓保留全部设备，避免影响经典蓝牙 SPP / 其他透传模块。
+        if (osrIsIOS() && !btSearchTouched && $('btDevSearch')) {
+            $('btDevSearch').value = BT_TARGET_QUERY;
+        }
         renderBtDevList();
         var nav = navApi();
         if (typeof nav.pushCurrentView === 'function') { try { nav.pushCurrentView(); } catch (e) { } }
@@ -913,6 +989,15 @@
         // 全屏设备页
         if ($('btDevBack')) $('btDevBack').addEventListener('click', closeBtDevices);
         if ($('btDevScan')) $('btDevScan').addEventListener('click', startBtScan);
+        if ($('btDevSearch')) $('btDevSearch').addEventListener('input', function () {
+            btSearchTouched = true;
+            renderBtDevList();
+        });
+        if ($('btDevShowAll')) $('btDevShowAll').addEventListener('click', function () {
+            if ($('btDevSearch')) $('btDevSearch').value = '';
+            btSearchTouched = true;
+            renderBtDevList();
+        });
         if ($('btDevEnable')) $('btDevEnable').addEventListener('click', function () {
             if (window.Orbit && typeof window.Orbit.openBluetoothSettings === 'function') {
                 window.Orbit.openBluetoothSettings();
@@ -970,18 +1055,27 @@
             var key = btKey(dev);
             var old = btDevMap[key];
             if (!old) {
-                btDevMap[key] = { name: dev.name || '', address: dev.address, rssi: (typeof dev.rssi === 'number' ? dev.rssi : null), kind: dev.kind || 'ble', paired: !!dev.paired };
+                btDevMap[key] = {
+                    name: dev.name || '', address: dev.address,
+                    rssi: (typeof dev.rssi === 'number' ? dev.rssi : null),
+                    kind: dev.kind || 'ble', paired: !!dev.paired,
+                    orbit: btIsOrbit(dev), services: dev.services || []
+                };
             } else {
                 if (dev.name) old.name = dev.name;
                 if (typeof dev.rssi === 'number') old.rssi = dev.rssi;
                 old.paired = old.paired || !!dev.paired;
+                old.orbit = old.orbit || btIsOrbit(dev);
+                if (dev.services && dev.services.length) old.services = dev.services;
             }
             renderBtDevList();
         };
         window.__onBtScanFinished = function () {
             btScanning = false;
             var n = Object.keys(btDevMap).length;
-            setBtDevStatus(n ? ('扫描完成，共发现 ' + n + ' 台设备') : '扫描完成，附近未发现蓝牙设备');
+            var m = btOrbitDevices().length;
+            setBtDevStatus(n ? ('扫描完成，共发现 ' + n + ' 台设备' +
+                (m ? ' · 其中 ' + m + ' 台 Orbit 设备' : ' · 未识别到 Orbit 设备')) : '扫描完成，附近未发现蓝牙设备');
             renderBtDevList();
         };
         window.__onBtScanError = function (msg) {

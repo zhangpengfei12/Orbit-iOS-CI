@@ -213,6 +213,22 @@ select.form-input:focus{background-image:url("data:image/svg+xml,%3Csvg xmlns='h
 .bt-dev-status{flex:1;min-width:140px;font-size:12px;color:#8d9ca4}
 .bt-dev-perm{padding:6px 10px;font-size:12px}
 .bt-dev-list{display:flex;flex-direction:column;gap:8px}
+.bt-dev-searchrow{display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:0 2px}
+.bt-dev-search-ico{flex:0 0 auto;width:18px;height:18px;color:#7e8c93}
+.bt-dev-search{flex:1;min-width:0;height:36px;padding:0 12px;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:rgba(255,255,255,.05);color:#eaf3f8;font-size:14px;outline:none;-webkit-appearance:none;appearance:none}
+.bt-dev-search:focus{border-color:rgba(47,183,232,.6);background:rgba(47,183,232,.08)}
+.bt-dev-search::placeholder{color:#7e8c93}
+.bt-dev-showall{flex:0 0 auto;height:36px;padding:0 12px;border:1px solid rgba(47,183,232,.45);border-radius:9px;background:transparent;color:#5ec8ee;font-size:13px;font-weight:600;cursor:pointer}
+.bt-dev-showall:active{background:rgba(47,183,232,.16)}
+.bt-orbit-card{display:flex;align-items:center;gap:12px;margin-bottom:10px;padding:12px;border:1px solid rgba(47,183,232,.55);border-radius:10px;background:rgba(47,183,232,.12)}
+.bt-orbit-card:active{background:rgba(47,183,232,.2)}
+.bt-orbit-ico{flex:0 0 auto;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(47,183,232,.22);color:#5ec8ee}
+.bt-orbit-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.bt-orbit-title{font-size:14px;font-weight:700;color:#8fe0ff}
+.bt-orbit-sub{font-size:11px;color:#a8c4d2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-orbit-go{flex:0 0 auto;padding:7px 14px;border:none;border-radius:8px;background:#2fb7e8;color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+.bt-dev-item.orbit{border-color:rgba(47,183,232,.55);background:rgba(47,183,232,.09)}
+.bt-orbit-tag{font-size:10px;color:#5ec8ee;border:1px solid rgba(47,183,232,.5);border-radius:6px;padding:2px 6px;line-height:1;margin-left:6px;vertical-align:middle}
 
 .bt-dev-item{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(255,255,255,.03);cursor:pointer;transition:border-color .15s,background .15s}
 .bt-dev-item:hover{background:rgba(255,255,255,.07);border-color:rgba(47,183,232,.35)}

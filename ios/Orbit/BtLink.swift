@@ -19,8 +19,8 @@ import UIKit
 //   写特征 c5f1543e-338d-47a0-8525-01e3c621359d（READ + WRITE_NR，无 NOTIFY）
 // 同时保留安卓侧 FFF1 写 / FFF2 通知（FFF0 服务）作为常见 BLE 串口模块候选。
 // 找不到固定 UUID 时回退「首个 writeWithoutResponse + 首个 notify」特征，
-// 固件未声明 NOTIFY 也能连接（notifyChar 为 nil 是允许的）。扫描保持全设备，
-// 以便同一套代码兼容不同 BLE 透传模块。
+// 固件未声明 NOTIFY 也能连接（notifyChar 为 nil 是允许的）。扫描保持全设备以兼容
+// 不同 BLE 透传模块，并按广播里的 service UUID 标记 Orbit 设备（详见 didDiscover）。
 // 扫描 12 秒自动收尾；写走 writeWithoutResponse + canSendWriteWithoutResponse 流控。
 final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let shared = BtLink()
@@ -29,6 +29,13 @@ final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private static let UUID_WRITE_ALT = "0000fff1-0000-1000-8000-00805f9b34fb"
     private static let UUID_NOTIFY = "0000fff2-0000-1000-8000-00805f9b34fb"
     private static let SCAN_TIMEOUT_SEC: Double = 12
+
+    // 固件广播包只有 31 字节：128 位 service UUID 占掉大半后，设备名常被挤掉，
+    // iOS 拿到的 LocalName 为空，列表就显示成 Unknown。按服务 UUID 识别才可靠。
+    private static let UUID_SERVICE_TCODE = "ff1b451d-3070-4276-9c81-5dc5ea1043bc"
+    private static let UUID_SERVICE_FFF0  = "0000fff0-0000-1000-8000-00805f9b34fb"
+    private static let UUID_SERVICE_FFE0  = "0000ffe0-0000-1000-8000-00805f9b34fb"
+    private static let ORBIT_NAME_KEYS = ["tcode", "orbit", "sr6"]
 
     private var central: CBCentralManager?
     private var scanPending = false            // 等蓝牙可用后自动开扫
@@ -153,11 +160,32 @@ final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         var name = advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? ""
         if name.isEmpty { name = peripheral.name ?? "" }
 
+        // 主广播区与 overflow 区都可能带 service UUID；命中即认为是 Orbit 设备，
+        // 不依赖设备名（固件把名字放在 GAP device name，连接前常常读不到）。
+        var services: [String] = []
+        for key in [CBAdvertisementDataServiceUUIDsKey, CBAdvertisementDataOverflowServiceUUIDsKey] {
+            if let list = advertisementData[key] as? [CBUUID] {
+                for u in list { services.append(u.uuidString.lowercased()) }
+            }
+        }
+        let serviceHit = services.contains(Self.UUID_SERVICE_TCODE)
+                      || services.contains(Self.UUID_SERVICE_FFF0)
+                      || services.contains(Self.UUID_SERVICE_FFE0)
+        let lowerName = name.lowercased()
+        let nameHit = Self.ORBIT_NAME_KEYS.contains(where: { lowerName.contains($0) })
+        let isOrbit = serviceHit || nameHit
+        // 名字为空时补一个可识别的显示名，前端默认搜索「TCODE」才能命中、才会置顶。
+        if isOrbit && name.isEmpty { name = "TCODE-ESP32" }
+        if isOrbit {
+            Diagnostics.shared.log("BT", "命中 Orbit 设备 \(name) 服务=\(services.joined(separator: ","))")
+        }
+
         // 自动重连兜底：地址或名称命中即连（BtLink.connect 里发起了扫描）
         if autoConnectPending, let pend = pendingConnect {
             let addrMatch = (addr.caseInsensitiveCompare(pend.address) == .orderedSame)
             let nameMatch = !pend.name.isEmpty && !name.isEmpty && name == pend.name
-            if addrMatch || nameMatch {
+            let orbitMatch = isOrbit && pend.name.lowercased().contains("tcode")
+            if addrMatch || nameMatch || orbitMatch {
                 autoConnectPending = false
                 cancelScanTimer()
                 central.stopScan()
@@ -169,7 +197,8 @@ final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
         emit("window.__onBtDeviceFound && window.__onBtDeviceFound(" +
              encodeJsArg(.object(["name": name, "address": addr,
-                                  "rssi": RSSI.intValue, "kind": "ble", "paired": false])) + ")")
+                                  "rssi": RSSI.intValue, "kind": "ble", "paired": false,
+                                  "orbit": isOrbit, "services": services])) + ")")
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
