@@ -130,53 +130,50 @@ function buildMediaLibrary(files) {
 }
 
 // ---- 4. CommandQueue：chunkCommandsForMtu + 队列 ----
+// 镜像 CommandQueue.swift：每个写包必须以 '\n' 结尾，固件才会 executeAll()
 function chunkCommandsForMtu(cmd, mtu) {
-  const m = Math.max(mtu, 1);
-  const lines = cmd.split("\n").map(l => l.trim()).filter(l => l.length > 0);
-  const result = []; let cur = "";
-  for (const line of lines) {
-    const cand = cur ? cur + "\n" + line : line;
-    if (cand.length > m) {
-      if (cur) { result.push(cur); cur = ""; }
-      if (line.length > m) { let rest = line; while (rest) { result.push(rest.slice(0, m)); rest = rest.slice(m); } }
-      else cur = line;
-    } else cur = cand;
+  const m = Math.max(mtu, 2);
+  const result = [];
+  for (const raw of cmd.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.length + 1 <= m) { result.push(line + "\n"); continue; }
+    const budget = m - 1;
+    let rest = line;
+    while (rest) { result.push(rest.slice(0, budget) + "\n"); rest = rest.slice(budget); }
   }
-  if (cur) result.push(cur);
   return result;
 }
 {
   const chunks = chunkCommandsForMtu("L09999\nR01234\n", 10);
-  eq(chunks, ["L09999", "R01234"], "MTU 分行不越界");
+  eq(chunks, ["L09999\n", "R01234\n"], "MTU 分行且每包带换行");
+  ok(chunks.every(c => c.endsWith("\n") && c.length <= 10), "每包不越界且带结束符");
 }
 {
   const chunks = chunkCommandsForMtu("L0123456789ABC", 10);
-  eq(chunks, ["L012345678", "9ABC"], "MTU 单行硬切");
+  eq(chunks, ["L01234567\n", "89ABC\n"], "MTU 单行硬切仍带换行");
+  ok(chunks.every(c => c.endsWith("\n") && c.length <= 10), "硬切片不越界且带结束符");
+}
+{
+  // 现场实际输入：多轴指令 + 分号 + 行尾换行，20 字节 MTU
+  const chunks = chunkCommandsForMtu("L05000I40;\nR05000I40;\nR15000I40;\n", 20);
+  eq(chunks.length, 3, "三轴各自成包");
+  ok(chunks.every(c => c.endsWith("\n") && c.length <= 20), "三轴全部带结束符且不越界");
 }
 // 队列行为
 class CommandQueue {
-  constructor(mtu = 20) { this.mtu = Math.max(mtu, 1); this.pending = []; this.seq = 0; }
-  enqueue(cmd) { for (const line of cmd.split("\n")) { const t = line.trim(); if (t) this.pending.push(t); } }
+  constructor(mtu = 20) { this.mtu = Math.max(mtu, 1); this.chunks = []; this.seq = 0; }
+  enqueue(cmd) { this.chunks.push(...chunkCommandsForMtu(cmd, this.mtu)); }
   takeNextChunk() {
-    if (!this.pending.length) return null;
-    let built = "";
-    while (this.pending.length) {
-      const line = this.pending[0];
-      const cand = built ? built + "\n" + line : line;
-      if (cand.length > this.mtu) {
-        if (!built) { const prefix = line.slice(0, this.mtu), rest = line.slice(this.mtu); this.pending[0] = rest; built = prefix; }
-        break;
-      }
-      built = cand; this.pending.shift();
-    }
-    this.seq++; return { text: built, seq: this.seq };
+    if (!this.chunks.length) return null;
+    this.seq++; return { text: this.chunks.shift(), seq: this.seq };
   }
 }
 {
   const q = new CommandQueue(10);
   q.enqueue("L09999\nR01234\n");
-  eq(q.takeNextChunk().text, "L09999", "队列 取出首包");
-  eq(q.takeNextChunk().text, "R01234", "队列 取出次包");
+  eq(q.takeNextChunk().text, "L09999\n", "队列 取出首包");
+  eq(q.takeNextChunk().text, "R01234\n", "队列 取出次包");
   eq(q.takeNextChunk(), null, "队列 空返回 null");
 }
 

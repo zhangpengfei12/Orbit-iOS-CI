@@ -22,6 +22,8 @@ import UIKit
 // 固件未声明 NOTIFY 也能连接（notifyChar 为 nil 是允许的）。扫描保持全设备以兼容
 // 不同 BLE 透传模块，并按广播里的 service UUID 标记 Orbit 设备（详见 didDiscover）。
 // 扫描 12 秒自动收尾；写走 writeWithoutResponse + canSendWriteWithoutResponse 流控。
+// ⚠ 每个写包必须带 '\n'：固件 TCode v0.4 只在换行时 executeAll() 真正驱动电机。
+// ⚠ CoreBluetooth 写入全部收敛主线程：本地 HTTP 服务的请求线程不能直接调 writeValue。
 final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let shared = BtLink()
 
@@ -51,6 +53,14 @@ final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var charsPending = 0
     private var finalizedConnection = false
     private var writeQueue: [Data] = []
+    private var writeMtu = 20                  // 连接时缓存，避免跨线程读 CoreBluetooth
+    private var flushWork: DispatchWorkItem?
+    private var writeCount: Int64 = 0          // 累计投递的写包
+    private var dropCount: Int64 = 0           // 因积压丢弃的旧包
+    private var firstWriteLogged = false       // 每次连接只记一次首包内容
+    private static let MAX_PENDING = 32        // 待发包上限，超出整批丢弃旧指令
+    private static let MAX_PER_DRAIN = 8       // 单次 drain 最多写几包，防一次倾泻
+    private static let FLUSH_INTERVAL: Double = 0.10
 
     private(set) var connectedAddress: String?
     private(set) var connectedName = ""
@@ -58,7 +68,17 @@ final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private(set) var lastError: String?
     private var pendingConnect: (address: String, name: String)?
 
-    var isConnected: Bool { connectedAddress != nil && writeChar != nil }
+    // Swifter 的 HTTP 请求在后台线程：用锁保护连接标志，不跨线程读引用属性。
+    private let stateLock = NSLock()
+    private var _linkReady = false
+    private var linkReady: Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return _linkReady
+    }
+    private func setLinkReady(_ v: Bool) {
+        stateLock.lock(); _linkReady = v; stateLock.unlock()
+    }
+    var isConnected: Bool { linkReady }
 
     // MARK: - JS 入口（BridgeProxy 分发）
 
@@ -116,6 +136,12 @@ final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func disconnect() {
+        // /api/osr/bt-disconnect 由 Swifter 后台线程进来，收敛主线程再碰 CoreBluetooth
+        if Thread.isMainThread { disconnectOnMain() }
+        else { DispatchQueue.main.async { [weak self] in self?.disconnectOnMain() } }
+    }
+
+    private func disconnectOnMain() {
         let had = isConnected
         if let p = target { central?.cancelPeripheralConnection(p) }
         cleanupLink()
@@ -125,18 +151,22 @@ final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
     }
 
-    /// 发送 TCode 文本。按 MTU 分片 + writeWithoutResponse 流控。
+    /// 发送 TCode 文本（可由 HTTP 后台线程调用）。
+    /// 分片是纯函数可后台算；入队与 CoreBluetooth 写入一律投递主线程，
+    /// 否则 CBCentralManager 的 delegate queue(.main) 与写入线程不一致，
+    /// canSendWriteWithoutResponse / peripheralIsReady 状态会错乱，
+    /// 表现为指令丢失或队列卡死后一次性倾泻。
     @discardableResult
     func write(_ text: String) -> Bool {
-        guard let p = target, let ch = writeChar, p.state == .connected else {
+        guard linkReady else {
             lastError = "蓝牙未连接"
             return false
         }
-        let mtu = max(p.maximumWriteValueLength(for: .withoutResponse), 20)
-        for chunk in chunkCommandsForMtu(text, mtu) {
-            writeQueue.append(Data(chunk.utf8))
+        let chunks = chunkCommandsForMtu(text, writeMtu).map { Data($0.utf8) }
+        guard !chunks.isEmpty else { return true }
+        DispatchQueue.main.async { [weak self] in
+            self?.enqueueOnMain(chunks)
         }
-        drain()
         return true
     }
 
@@ -144,7 +174,10 @@ final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         return ["ok": true,
                 "connected": isConnected,
                 "address": connectedAddress ?? "",
-                "kind": isConnected ? connectedKind : ""]
+                "kind": isConnected ? connectedKind : "",
+                "mtu": writeMtu,
+                "writes": writeCount,
+                "dropped": dropCount]
     }
 
     // MARK: - CBCentralManagerDelegate
@@ -322,12 +355,13 @@ final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             return
         }
         finalizedConnection = true
+        setLinkReady(true)
         connectedAddress = p.identifier.uuidString
         connectedName = pendingConnect?.name ?? (p.name ?? "")
         connectedKind = "ble"
         if let nc = notifyChar { p.setNotifyValue(true, for: nc) }
-        let mtu = p.maximumWriteValueLength(for: .withoutResponse)
-        Diagnostics.shared.log("BT", "已连接 \(connectedName) 写=\(wc.uuid.uuidString) 通知=\(notifyChar?.uuid.uuidString ?? "-") MTU=\(mtu)")
+        writeMtu = max(p.maximumWriteValueLength(for: .withoutResponse), 20)
+        Diagnostics.shared.log("BT", "已连接 \(connectedName) 写=\(wc.uuid.uuidString) 通知=\(notifyChar?.uuid.uuidString ?? "-") MTU=\(writeMtu)")
         emit("window.__onBtConnected && window.__onBtConnected(\(q(connectedAddress ?? "")),'ble',\(q(connectedName)))")
 
         // 对齐安卓：连接成功即回写设置，自动重连靠持久化的 btAddress
@@ -340,12 +374,52 @@ final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         OrbitConfig.shared.save()
     }
 
+    /// 入队（仅主线程）：实时位置指令只需最新值，积压时整批丢掉过期的，
+    /// 否则 BLE 吞吐跟不上会把几秒前的位置排队重放，表现「很久才动一下」。
+    private func enqueueOnMain(_ chunks: [Data]) {
+        guard let p = target, writeChar != nil, p.state == .connected else { return }
+        if !firstWriteLogged, let first = chunks.first {
+            firstWriteLogged = true
+            let sample = (String(data: first, encoding: .utf8) ?? "")
+                .replacingOccurrences(of: "\n", with: "\\n")
+            Diagnostics.shared.log("BT", "BLE 首包=[\(sample)] 字节=\(first.count) MTU=\(writeMtu)")
+        }
+        if writeQueue.count > Self.MAX_PENDING {
+            let dropped = writeQueue.count
+            dropCount += Int64(dropped)
+            writeQueue.removeAll(keepingCapacity: true)
+            Diagnostics.shared.log("BT", "BLE 积压：丢弃 \(dropped) 个旧包")
+        }
+        writeQueue.append(contentsOf: chunks)
+        drain()
+    }
+
+    /// 写包（仅主线程）。限制单次数量，靠 peripheralIsReady + 定时兜底继续推进，
+    /// 避免一次倾泻把底层 ATT 缓冲塞满导致静默丢包。
     private func drain() {
-        guard let p = target, let ch = writeChar else { return }
-        while !writeQueue.isEmpty && p.canSendWriteWithoutResponse {
+        guard let p = target, let ch = writeChar, p.state == .connected else { return }
+        var sent = 0
+        while sent < Self.MAX_PER_DRAIN && !writeQueue.isEmpty && p.canSendWriteWithoutResponse {
             let d = writeQueue.removeFirst()
             p.writeValue(d, for: ch, type: .withoutResponse)
+            sent += 1
+            writeCount += 1
         }
+        if sent > 0 && writeCount % 200 == 0 {
+            Diagnostics.shared.log("BT", "BLE 累计写入 \(writeCount) 包，丢弃 \(dropCount)，待发 \(writeQueue.count)")
+        }
+        if !writeQueue.isEmpty { scheduleFlush() }
+    }
+
+    /// 流控兜底：个别机型/系统版本不回调 peripheralIsReady，队列会永久卡住。
+    /// 每 100ms 在主线程复查一次，canSend 恢复即继续写。
+    private func scheduleFlush() {
+        flushWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in
+            self?.drain()
+        }
+        flushWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.FLUSH_INTERVAL, execute: w)
     }
 
     private func cleanupLink() {
@@ -354,6 +428,10 @@ final class BtLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         notifyChar = nil
         finalizedConnection = false
         writeQueue.removeAll()
+        flushWork?.cancel()
+        flushWork = nil
+        firstWriteLogged = false
+        setLinkReady(false)
         connectedAddress = nil
         connectedName = ""
     }

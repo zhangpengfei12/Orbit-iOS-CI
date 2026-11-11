@@ -2,11 +2,19 @@ import Foundation
 
 // MARK: - T-Code 下行队列与 MTU 分片（纯逻辑）
 //
-// 对齐安卓 OsrCore 的指令下发：指令以「\n」分隔的多行 T-Code 文本下发。
-// BLE 写有 MTU 上限（通常 20/23 字节），需要按行拼装、必要时切分。
-// 本文件只做队列与分片的纯算法，真机发送（CoreBluetooth writeValue）留待 M2。
+// ⚠⚠ 固件 TCodeESP32（TCode v0.4 / lib/TCode/TCode.cpp）的 byteInput() 语义：
+//   遇到空格 / '\n' / '\r' 才把 _cmdBuffer 提交 processCommand()；
+//   **只有 '\n' / '\r' 才调用 executeAll()**，把目标位置真正应用到电机。
+//   也就是说每个 BLE 写包都必须以换行结束，否则固件会一直把字符堆在解析
+//   缓冲里（最多 47 字节），既不执行当前指令，又会把后续包粘连成畸形串丢弃
+//   —— 现场表现就是「蓝牙连上了但设备不动，偶尔才跳一下」。
+//   早期实现按行拼接时把行尾换行剥掉了，正是这个故障的根因。
+// UDP 通道不受影响（整段文本原样带 \n 发出），所以只有 BLE 暴露该问题。
+//
+// 分片策略改为「一行一包 + 行尾换行」：TCode 单行一般 10~20 字节，
+// 不超过 BLE 默认 20 字节 ATT 载荷，简单且不会把指令从中间切开。
 
-/// 一包待下发的指令（已切到 MTU 内）。
+/// 一包待下发的指令（已切到 MTU 内，且一定带行结束符）。
 struct OutgoingChunk {
     let text: String
     let seq: Int64
@@ -14,76 +22,47 @@ struct OutgoingChunk {
 
 /// T-Code 下行队列：入队多行指令，按 MTU 逐包取出。
 class CommandQueue {
-    private var pending: [String] = []   // 待下发指令行（不含换行）
+    private var chunks: [String] = []
     private let mtu: Int
     private var seq: Int64 = 0
 
     init(mtu: Int = 20) { self.mtu = max(mtu, 1) }
 
-    /// 入队一条完整指令（可能含多行）。
+    /// 入队一条完整指令（可能含多行），立即切成带换行的写包。
     func enqueue(_ cmd: String) {
-        for line in cmd.components(separatedBy: "\n") {
-            let t = line.trimmingCharacters(in: .whitespaces)
-            if !t.isEmpty { pending.append(t) }
-        }
+        chunks.append(contentsOf: chunkCommandsForMtu(cmd, mtu))
     }
 
-    /// 取出下一包（不超过 MTU 的多行拼接）。返回 nil 表示空。
+    /// 取出下一包（一条完整指令 + 换行）。返回 nil 表示空。
     func takeNextChunk() -> OutgoingChunk? {
-        guard !pending.isEmpty else { return nil }
-        var built = ""
-        while !pending.isEmpty {
-            let line = pending[0]
-            let candidate = built.isEmpty ? line : built + "\n" + line
-            if candidate.utf8.count > mtu {
-                if built.isEmpty {
-                    // 单行都超过 MTU：按字符硬切（罕见，固件一般不支持，但保持不丢数据）
-                    let prefix = String(line.prefix(mtu))
-                    let rest = String(line.dropFirst(mtu))
-                    pending[0] = rest
-                    built = prefix
-                }
-                break
-            }
-            built = candidate
-            pending.removeFirst()
-        }
+        guard !chunks.isEmpty else { return nil }
         seq += 1
-        return OutgoingChunk(text: built, seq: seq)
+        return OutgoingChunk(text: chunks.removeFirst(), seq: seq)
     }
 
-    var isEmpty: Bool { pending.isEmpty }
-    var count: Int { pending.count }
+    var isEmpty: Bool { chunks.isEmpty }
+    var count: Int { chunks.count }
 }
 
-/// 把一段多行 T-Code 文本按 MTU 切成若干包（纯函数，供测试/真机复用）。
+/// 把一段多行 T-Code 文本切成若干 BLE 写包（纯函数，供测试/真机复用）。
+/// 返回的每个包都不超过 mtu 字节，且以 '\n' 结尾。
 func chunkCommandsForMtu(_ cmd: String, _ mtu: Int) -> [String] {
-    let m = max(mtu, 1)
-    var lines: [String] = []
-    for line in cmd.components(separatedBy: "\n") {
-        let t = line.trimmingCharacters(in: .whitespaces)
-        if !t.isEmpty { lines.append(t) }
-    }
+    let m = max(mtu, 2)          // 至少留 1 字节给行结束符；实际 MTU >= 20
     var result: [String] = []
-    var cur = ""
-    for line in lines {
-        let candidate = cur.isEmpty ? line : cur + "\n" + line
-        if candidate.utf8.count > m {
-            if !cur.isEmpty { result.append(cur); cur = "" }
-            if line.utf8.count > m {
-                var rest = line
-                while !rest.isEmpty {
-                    let take = String(rest.prefix(m))
-                    result.append(take)
-                    rest = String(rest.dropFirst(m))
-                }
-            } else {
-                cur = line
-            }
-        } else {
-            cur = candidate
+    for rawLine in cmd.components(separatedBy: "\n") {
+        let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        if line.isEmpty { continue }
+        if line.utf8.count + 1 <= m {
+            result.append(line + "\n")
+            continue
+        }
+        // 单行超过 MTU（罕见）：按字符硬切，每一片仍补换行，末片触发 executeAll()。
+        let budget = m - 1
+        var rest = line
+        while !rest.isEmpty {
+            result.append(String(rest.prefix(budget)) + "\n")
+            rest = String(rest.dropFirst(budget))
         }
     }
-    if !cur.isEmpty { result.append(cur) }
     return result
 }
