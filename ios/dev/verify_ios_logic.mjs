@@ -160,6 +160,11 @@ function chunkCommandsForMtu(cmd, mtu) {
   eq(chunks.length, 3, "三轴各自成包");
   ok(chunks.every(c => c.endsWith("\n") && c.length <= 20), "三轴全部带结束符且不越界");
 }
+{
+  // 用户把设置里的「指令补换行」关掉时，BLE 仍必须自己补结束符
+  const chunks = chunkCommandsForMtu("L05000I40;", 20);
+  eq(chunks, ["L05000I40;\n"], "无换行输入也补结束符");
+}
 // 队列行为
 class CommandQueue {
   constructor(mtu = 20) { this.mtu = Math.max(mtu, 1); this.chunks = []; this.seq = 0; }
